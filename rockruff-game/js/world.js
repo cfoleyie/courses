@@ -186,6 +186,15 @@ export function generateWorld() {
   ];
   for (const s of signs) if (get(s.x, s.y).type !== 'npc') set(s.x, s.y, 'sign');
 
+  // ---- Meadow grass (the open routes between regions) ----
+  // Everything still left as plain default 'grass' is the connecting meadow — scatter it
+  // with tall grass so meadow-biome Pokémon (Rockruff, Pikachu, Eevee...) have somewhere to be.
+  for (let y = 0; y < WORLD_H; y++) {
+    for (let x = 0; x < WORLD_W; x++) {
+      if (tiles[y][x].type === 'grass' && rng() < 0.3) set(x, y, 'tallGrass');
+    }
+  }
+
   return {
     tiles, trainers, elder, shrine, signs, martPos, healPos,
     start: { x: 31, y: 23 },

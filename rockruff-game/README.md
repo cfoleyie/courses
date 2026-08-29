@@ -25,9 +25,10 @@ python3 -m http.server 8000
 - **Move**: Arrow keys / WASD (touch devices get an on-screen D-pad)
 - **Interact**: `E` / `Enter` / `Space` — talk to trainers & the Elder, read signs, shop, heal
 - **Pause menu**: `Esc` — Party, Pokédex, Bag
-- Walk into tall grass / forest brush / cave floor / snow / volcanic ground to trigger wild
-  encounters. Battle trainers by interacting with them. Defeat them for cash, catch wild
-  Pokémon with Poké/Great Balls, level up, and evolve.
+- Wild Pokémon actually roam each biome as visible sprites — walk into one to battle it.
+  Defeated/caught ones respawn elsewhere after a short while. Battle trainers by interacting
+  with them. Defeat them for cash, catch wild Pokémon with Poké/Great Balls, level up, and
+  evolve.
 - Bond with enough Pokémon and the Elder guarding the **Sacred Hollow** will let you through
   to find Arceus.
 
@@ -38,6 +39,7 @@ Progress autosaves to `localStorage` in your browser.
 - `js/pokedex-data.js`, `js/moves-data.js` — species, evolutions, moves, type chart
 - `js/render.js` — all procedural canvas art (creatures, tiles, player/trainer sprites)
 - `js/world.js` — the generated overworld map, biomes, trainers, signs
+- `js/wild.js` — wild Pokémon that spawn, wander, and respawn on the map
 - `js/player.js` — party/XP/leveling/evolution
 - `js/battle.js` — turn-based battle engine, catching
 - `js/ui.js` — DOM overlay (dialogue, menus, Pokédex/Party/Shop screens)

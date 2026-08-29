@@ -1,12 +1,13 @@
 // Game loop, input, world state machine — the glue holding Rockruff together.
-import { generateWorld, tileAt, TILE, WORLD_W, WORLD_H, BLOCKING, TILE_BIOME } from './world.js';
-import { SPECIES, BIOME_TABLE } from './pokedex-data.js';
+import { generateWorld, tileAt, TILE, WORLD_W, WORLD_H, BLOCKING } from './world.js';
+import { SPECIES } from './pokedex-data.js';
 import { createPlayer, healParty, addCapturedPokemon } from './player.js';
 import {
   startWildBattle, startTrainerBattle, startLegendaryBattle, resolveTurn,
   activePlayerMon, activeEnemyMon, switchActive, attemptFlee, attemptCatch, usePotion, enemyFreeTurn,
 } from './battle.js';
 import { drawTile, drawPersonSprite, drawCreature } from './render.js';
+import { populateWildSpawns, updateWildSpawns, scheduleRespawn, removeSpawn, spawnAtTile } from './wild.js';
 import * as ui from './ui.js';
 
 const canvas = document.getElementById('game-canvas');
@@ -128,8 +129,8 @@ function onArrive(x, y) {
   const tile = tileAt(world, x, y);
   if (!tile) return;
   if (x === world.shrine.x && y === world.shrine.y) { triggerShrine(); return; }
-  const biome = TILE_BIOME[tile.type];
-  if (biome && mode === 'OVERWORLD' && Math.random() < 0.12) triggerWildEncounter(biome);
+  const spawn = spawnAtTile(world, x, y);
+  if (spawn && mode === 'OVERWORLD') triggerWildEncounter(spawn);
 }
 
 // ---------------- Interaction ----------------
@@ -259,17 +260,14 @@ async function triggerTrainer(trainer) {
   saveGame();
 }
 
-async function triggerWildEncounter(biome) {
+async function triggerWildEncounter(spawn) {
   mode = 'BUSY';
-  const table = BIOME_TABLE[biome];
-  if (!table || !table.length) { mode = 'OVERWORLD'; return; }
-  const speciesId = table[Math.floor(Math.random() * table.length)];
-  const avgLevel = Math.round(player.party.reduce((s, m) => s + m.level, 0) / player.party.length);
-  const level = Math.max(2, avgLevel + Math.floor(Math.random() * 5) - 2);
-  await ui.say(`Wild ${SPECIES[speciesId].name} appeared!`);
-  const battle = startWildBattle(player, speciesId, level);
+  removeSpawn(world, spawn.uid);
+  await ui.say(`Wild ${SPECIES[spawn.speciesId].name} appeared!`);
+  const battle = startWildBattle(player, spawn.speciesId, spawn.level);
   await runBattle(battle);
   ui.updateHUD(player);
+  scheduleRespawn(world, spawn.biome);
   mode = 'OVERWORLD';
   saveGame();
 }
@@ -491,6 +489,13 @@ function drawOverworld(t) {
     if (tr.x < x0 || tr.x > x1 || tr.y < y0 || tr.y > y1) continue;
     entities.push({ y: tr.y, draw: () => drawPersonSprite(ctx, tr.x * TILE - camX + TILE / 2, tr.y * TILE - camY + TILE / 2, TILE * 0.85, { facing: 'down', cap: tr.palette.cap, shirt: tr.palette.shirt }) });
   }
+  for (const s of world.wildSpawns) {
+    if (s.x < x0 || s.x > x1 || s.y < y0 || s.y > y1) continue;
+    entities.push({
+      y: s.y - 0.2,
+      draw: () => drawCreature(ctx, s.px - camX, s.py - camY + TILE * 0.12, TILE * 0.32, SPECIES[s.speciesId], { bob: Math.sin(t * 3 + s.seed) * 2 }),
+    });
+  }
   entities.push({ y: world.elder.y, draw: () => drawPersonSprite(ctx, world.elder.x * TILE - camX + TILE / 2, world.elder.y * TILE - camY + TILE / 2, TILE * 0.85, { facing: 'down', cap: '#cfd6e0', shirt: '#8a7ab5', hair: '#e8e8e8' }) });
   entities.push({ y: player.y - 0.4, draw: () => drawCreature(ctx, partner.px - camX, partner.py - camY + TILE * 0.28, TILE * 0.42, SPECIES[player.party[0].speciesId], { bob: Math.sin(t * 6) * 2 }) });
   entities.push({
@@ -508,7 +513,14 @@ function loop(now) {
   const dt = Math.min(0.05, (now - (loop.last || now)) / 1000);
   loop.last = now;
   timeAcc += dt;
-  if (mode === 'OVERWORLD') updateMovement(dt);
+  if (mode === 'OVERWORLD') {
+    updateMovement(dt);
+    updateWildSpawns(world, dt, now);
+    if (mode === 'OVERWORLD' && !anim.moving) {
+      const bumpedInto = spawnAtTile(world, player.x, player.y);
+      if (bumpedInto) triggerWildEncounter(bumpedInto);
+    }
+  }
   updatePartner(dt);
   if (mode === 'OVERWORLD' || mode === 'BUSY' || mode === 'BATTLE') {
     ctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
@@ -557,6 +569,7 @@ function setupMobileControls() {
 // ---------------- Boot ----------------
 function init() {
   world = generateWorld();
+  populateWildSpawns(world);
   const saved = loadGame();
   const isNew = !saved;
   player = saved || createPlayer();
