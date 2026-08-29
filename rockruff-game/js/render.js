@@ -40,6 +40,9 @@ export function drawCreature(ctx, cx, cy, s, species, opts = {}) {
   // ---- back features (behind body outline) ----
   if (['wing'].includes(r.feature)) drawFeature(ctx, r.feature, s, body, sec);
 
+  // ---- legs (mostly hidden under the body, just the feet peek out at the bottom) ----
+  drawLegs(ctx, s, body);
+
   // ---- body ----
   const grad = ctx.createRadialGradient(-s * 0.3, -s * 0.35, s * 0.2, 0, 0, s * 1.1);
   grad.addColorStop(0, lighten(body, 0.35));
@@ -59,6 +62,9 @@ export function drawCreature(ctx, cx, cy, s, species, opts = {}) {
   ctx.fill();
 
   drawPattern(ctx, r.pattern, s, sec, body);
+
+  // ---- arms ----
+  drawArms(ctx, s, body);
 
   // ---- ears ----
   drawEars(ctx, r.earType, s, body, sec);
@@ -99,6 +105,50 @@ export function drawCreature(ctx, cx, cy, s, species, opts = {}) {
   ctx.stroke();
 
   ctx.restore();
+}
+
+function drawLegs(ctx, s, body) {
+  const shade = darken(body, 0.18);
+  ctx.fillStyle = shade;
+  ctx.strokeStyle = darken(body, 0.4);
+  ctx.lineWidth = Math.max(1, s * 0.025);
+  for (const side of [-1, 1]) {
+    ctx.beginPath();
+    ctx.ellipse(side * s * 0.3, s * 0.68, s * 0.17, s * 0.16, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  }
+  // little toes
+  ctx.fillStyle = darken(body, 0.32);
+  for (const side of [-1, 1]) {
+    for (const toe of [-0.08, 0, 0.08]) {
+      ctx.beginPath();
+      ctx.ellipse(side * s * 0.3 + toe * s, s * 0.8, s * 0.035, s * 0.03, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+}
+
+function drawArms(ctx, s, body) {
+  ctx.fillStyle = body;
+  ctx.strokeStyle = darken(body, 0.32);
+  ctx.lineWidth = Math.max(1, s * 0.03);
+  for (const side of [-1, 1]) {
+    ctx.save();
+    ctx.translate(side * s * 0.66, s * 0.2);
+    ctx.rotate(side * 0.35);
+    ctx.beginPath();
+    ctx.ellipse(0, 0, s * 0.15, s * 0.22, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+    // little paw
+    ctx.fillStyle = lighten(body, 0.3);
+    ctx.beginPath();
+    ctx.ellipse(side * s * 0.72, s * 0.36, s * 0.09, s * 0.08, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = body;
+  }
 }
 
 function drawEars(ctx, type, s, body, sec) {
