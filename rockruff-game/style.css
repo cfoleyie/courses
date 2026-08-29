@@ -5,13 +5,18 @@ html, body {
   font-family: 'Comic Sans MS', 'Baloo 2', system-ui, sans-serif;
   overflow: hidden;
   color: #3a2e22;
+  display: flex; align-items: center; justify-content: center;
 }
 
+/* #game-root is always laid out at its native 880x600 design size, then uniformly
+   transform:scale()'d by main.js to fit the viewport — this keeps the canvas crisp and
+   every DOM overlay (HUD, menus, text) proportional instead of stretching or cropping
+   on odd/portrait aspect ratios like a phone screen. */
 #game-root {
   position: relative;
   width: 880px;
   height: 600px;
-  margin: 20px auto;
+  margin: 0;
   border-radius: 22px;
   overflow: hidden;
   box-shadow: 0 20px 60px rgba(0,0,0,0.55), 0 0 0 6px #3a2e50;
@@ -198,6 +203,5 @@ canvas { display: block; image-rendering: auto; }
 #mobile-interact { width: 56px; height: 56px; border-radius: 50%; pointer-events: auto; }
 
 @media (max-width: 900px) {
-  #game-root { width: 100vw; height: 100vh; margin: 0; border-radius: 0; }
   #mobile-controls { display: flex !important; }
 }

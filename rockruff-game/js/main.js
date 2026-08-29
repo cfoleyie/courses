@@ -14,6 +14,19 @@ const ctx = canvas.getContext('2d');
 const CANVAS_W = canvas.width, CANVAS_H = canvas.height;
 const ANIM_DUR = 0.16;
 
+// #game-root is laid out at a fixed 880x600 design size, then scaled as one unit to fit
+// whatever viewport it's in — keeps the canvas crisp and every DOM overlay proportional
+// instead of stretching on a phone's portrait aspect ratio.
+function fitToViewport() {
+  const root = document.getElementById('game-root');
+  const pad = 16;
+  const scale = Math.min((window.innerWidth - pad) / CANVAS_W, (window.innerHeight - pad) / CANVAS_H);
+  root.style.transform = `scale(${Math.max(0.25, scale)})`;
+}
+window.addEventListener('resize', fitToViewport);
+window.addEventListener('orientationchange', fitToViewport);
+fitToViewport();
+
 const DIR_VEC = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] };
 const KEY_DIR = {
   ArrowUp: 'up', KeyW: 'up', ArrowDown: 'down', KeyS: 'down',
