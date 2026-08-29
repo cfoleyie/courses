@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Song Discovery</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1>🎵 Song Discovery</h1>
+    <p class="subtitle">Search an artist to see their whole catalog, or search a song to find tracks just like it.</p>
+    <form id="search-form" class="search-form">
+      <input id="search-input" type="text" placeholder="Search an artist or a song (e.g. &quot;Imagine Dragons&quot; or &quot;Believer&quot;)" autocomplete="off" />
+      <button type="submit">Search</button>
+    </form>
+  </header>
+
+  <main id="app">
+    <p id="status" class="status" hidden></p>
+
+    <section id="artist-view" hidden>
+      <div class="artist-header">
+        <img id="artist-art" class="artist-art" alt="" />
+        <div>
+          <h2 id="artist-name"></h2>
+          <p id="artist-bio" class="bio"></p>
+          <a id="artist-videos-link" class="video-link" target="_blank" rel="noopener">▶ Watch videos on YouTube</a>
+        </div>
+      </div>
+      <h3>Full track list</h3>
+      <ul id="artist-tracks" class="track-list"></ul>
+    </section>
+
+    <section id="song-results" hidden>
+      <h3>Matching songs</h3>
+      <ul id="song-list" class="track-list"></ul>
+    </section>
+
+    <section id="detail-view" hidden>
+      <button id="back-btn" class="back-btn">&larr; Back to results</button>
+      <div class="detail-header">
+        <img id="detail-art" class="detail-art" alt="" />
+        <div>
+          <h2 id="detail-title"></h2>
+          <p id="detail-artist"></p>
+          <p id="detail-genre"></p>
+          <audio id="detail-audio" controls></audio>
+          <div class="detail-links">
+            <a id="detail-video-link" class="video-link" target="_blank" rel="noopener">▶ Watch video on YouTube</a>
+            <a id="detail-store-link" class="store-link" target="_blank" rel="noopener">Open in Apple Music</a>
+          </div>
+        </div>
+      </div>
+      <p id="detail-bio" class="bio"></p>
+      <h3>Songs like this one</h3>
+      <ul id="similar-list" class="track-list"></ul>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
