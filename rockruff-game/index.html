@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rockruff — A Pokémon Adventure</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="game-root">
+  <canvas id="game-canvas" width="880" height="600"></canvas>
+
+  <div id="hud">
+    <div id="hud-money">💰 <span id="hud-money-val">0</span></div>
+    <div id="hud-dex">📘 <span id="hud-dex-val">0</span>/<span id="hud-dex-total">0</span></div>
+    <div id="hud-party"></div>
+  </div>
+
+  <div id="interact-hint" class="hidden">Press <b>E</b> / <b>Enter</b> to interact</div>
+
+  <div id="pause-hint" class="hidden">Press <b>Esc</b> for menu</div>
+
+  <div id="textbox" class="hidden">
+    <div id="textbox-name"></div>
+    <div id="textbox-text"></div>
+    <div id="textbox-more">▼</div>
+  </div>
+
+  <div id="battle-screen" class="hidden">
+    <div id="battle-enemy-info" class="battle-info-card">
+      <div class="mon-name-row"><span id="battle-enemy-name"></span><span id="battle-enemy-level"></span></div>
+      <div class="hp-bar-track"><div id="battle-enemy-hp" class="hp-bar-fill"></div></div>
+    </div>
+    <div id="battle-player-info" class="battle-info-card">
+      <div class="mon-name-row"><span id="battle-player-name"></span><span id="battle-player-level"></span></div>
+      <div class="hp-bar-track"><div id="battle-player-hp" class="hp-bar-fill"></div></div>
+      <div id="battle-player-hp-text"></div>
+    </div>
+    <div id="battle-menu-area"></div>
+  </div>
+
+  <div id="modal-screen" class="hidden">
+    <div id="modal-card">
+      <div id="modal-header">
+        <span id="modal-title"></span>
+        <button id="modal-close">✕</button>
+      </div>
+      <div id="modal-body"></div>
+    </div>
+  </div>
+
+  <div id="intro-screen" class="hidden">
+    <div id="intro-canvas-wrap"><canvas id="intro-canvas" width="880" height="600"></canvas></div>
+    <div id="intro-text"></div>
+    <div id="intro-more">Click to continue ▼</div>
+  </div>
+
+  <div id="mobile-controls" class="hidden">
+    <div id="dpad">
+      <button data-dir="up">▲</button>
+      <button data-dir="left">◀</button>
+      <button data-dir="down">▼</button>
+      <button data-dir="right">▶</button>
+    </div>
+    <button id="mobile-interact">E</button>
+  </div>
+</div>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
