@@ -18,7 +18,7 @@ function darken(hex, amt) {
 
 // Draws an adorable chibi blob-creature centered at (cx, cy). `s` = overall scale (body radius-ish).
 export function drawCreature(ctx, cx, cy, s, species, opts = {}) {
-  const { flip = false, bob = 0, blink = false, faint = false } = opts;
+  const { flip = false, bob = 0, blink = false, faint = false, walk = null } = opts;
   const r = species.render;
   const body = r.bodyColor, sec = r.secondaryColor;
   ctx.save();
@@ -41,7 +41,7 @@ export function drawCreature(ctx, cx, cy, s, species, opts = {}) {
   if (['wing'].includes(r.feature)) drawFeature(ctx, r.feature, s, body, sec);
 
   // ---- legs (mostly hidden under the body, just the feet peek out at the bottom) ----
-  drawLegs(ctx, s, body);
+  drawLegs(ctx, s, body, walk);
 
   // ---- body ----
   const grad = ctx.createRadialGradient(-s * 0.3, -s * 0.35, s * 0.2, 0, 0, s * 1.1);
@@ -76,7 +76,7 @@ export function drawCreature(ctx, cx, cy, s, species, opts = {}) {
   ctx.restore();
 
   // ---- arms ----
-  drawArms(ctx, s, body);
+  drawArms(ctx, s, body, walk);
 
   // ---- ears ----
   drawEars(ctx, r.earType, s, body, sec);
@@ -166,35 +166,51 @@ function drawSparkle(ctx, x, y, size, color) {
   ctx.restore();
 }
 
-function drawLegs(ctx, s, body) {
+// Diagonal quadruped gait: a limb's phase decides how far forward/back and how high it swings.
+// Front-left pairs with back-right (same phase), front-right pairs with back-left (phase + PI) —
+// like a running puppy's trot. `walk` is null for a standing/still creature (neutral pose).
+function limbSwing(walk, side, swingX, liftY) {
+  if (walk == null) return { dx: 0, dy: 0 };
+  const phase = walk + (side === 1 ? 0 : Math.PI);
+  return { dx: Math.cos(phase) * swingX, dy: -Math.max(0, Math.sin(phase)) * liftY };
+}
+
+function drawLegs(ctx, s, body, walk) {
   const shade = darken(body, 0.18);
+  const positions = [];
+  for (const side of [-1, 1]) {
+    // legs pair with the opposite-side arm for the diagonal gait, so flip the phase here
+    const { dx, dy } = limbSwing(walk, -side, s * 0.14, s * 0.1);
+    positions.push({ side, x: side * s * 0.3 + dx, y: s * 0.68 + dy });
+  }
   ctx.fillStyle = shade;
   ctx.strokeStyle = darken(body, 0.4);
   ctx.lineWidth = Math.max(1, s * 0.025);
-  for (const side of [-1, 1]) {
+  for (const p of positions) {
     ctx.beginPath();
-    ctx.ellipse(side * s * 0.3, s * 0.68, s * 0.17, s * 0.16, 0, 0, Math.PI * 2);
+    ctx.ellipse(p.x, p.y, s * 0.17, s * 0.16, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.stroke();
   }
   // little toes
   ctx.fillStyle = darken(body, 0.32);
-  for (const side of [-1, 1]) {
+  for (const p of positions) {
     for (const toe of [-0.08, 0, 0.08]) {
       ctx.beginPath();
-      ctx.ellipse(side * s * 0.3 + toe * s, s * 0.8, s * 0.035, s * 0.03, 0, 0, Math.PI * 2);
+      ctx.ellipse(p.x + toe * s, p.y + s * 0.12, s * 0.035, s * 0.03, 0, 0, Math.PI * 2);
       ctx.fill();
     }
   }
 }
 
-function drawArms(ctx, s, body) {
+function drawArms(ctx, s, body, walk) {
   ctx.fillStyle = body;
   ctx.strokeStyle = darken(body, 0.32);
   ctx.lineWidth = Math.max(1, s * 0.03);
   for (const side of [-1, 1]) {
+    const { dx, dy } = limbSwing(walk, side, s * 0.16, s * 0.12);
     ctx.save();
-    ctx.translate(side * s * 0.66, s * 0.2);
+    ctx.translate(side * s * 0.66 + dx, s * 0.2 + dy);
     ctx.rotate(side * 0.35);
     ctx.beginPath();
     ctx.ellipse(0, 0, s * 0.15, s * 0.22, 0, 0, Math.PI * 2);
@@ -204,7 +220,7 @@ function drawArms(ctx, s, body) {
     // little paw
     ctx.fillStyle = lighten(body, 0.3);
     ctx.beginPath();
-    ctx.ellipse(side * s * 0.72, s * 0.36, s * 0.09, s * 0.08, 0, 0, Math.PI * 2);
+    ctx.ellipse(side * s * 0.72 + dx, s * 0.36 + dy, s * 0.09, s * 0.08, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.fillStyle = body;
   }

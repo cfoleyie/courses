@@ -491,13 +491,23 @@ function drawOverworld(t) {
   }
   for (const s of world.wildSpawns) {
     if (s.x < x0 || s.x > x1 || s.y < y0 || s.y > y1) continue;
+    const wp = t * 12 + s.seed * 4;
     entities.push({
       y: s.y - 0.2,
-      draw: () => drawCreature(ctx, s.px - camX, s.py - camY + TILE * 0.12, TILE * 0.32, SPECIES[s.speciesId], { bob: Math.sin(t * 3 + s.seed) * 2 }),
+      draw: () => drawCreature(ctx, s.px - camX, s.py - camY + TILE * 0.12, TILE * 0.32, SPECIES[s.speciesId], {
+        walk: s.moving ? wp : null,
+        bob: s.moving ? Math.abs(Math.sin(wp)) * 2.5 : Math.sin(t * 3 + s.seed) * 2,
+      }),
     });
   }
   entities.push({ y: world.elder.y, draw: () => drawPersonSprite(ctx, world.elder.x * TILE - camX + TILE / 2, world.elder.y * TILE - camY + TILE / 2, TILE * 0.85, { facing: 'down', cap: '#cfd6e0', shirt: '#8a7ab5', hair: '#e8e8e8' }) });
-  entities.push({ y: player.y - 0.4, draw: () => drawCreature(ctx, partner.px - camX, partner.py - camY + TILE * 0.28, TILE * 0.42, SPECIES[player.party[0].speciesId], { bob: Math.sin(t * 6) * 2 }) });
+  entities.push({
+    y: player.y - 0.4,
+    draw: () => drawCreature(ctx, partner.px - camX, partner.py - camY + TILE * 0.28, TILE * 0.42, SPECIES[player.party[0].speciesId], {
+      walk: anim.moving ? t * 14 : null,
+      bob: anim.moving ? Math.abs(Math.sin(t * 14)) * 3 : Math.sin(t * 6) * 2,
+    }),
+  });
   entities.push({
     y: player.y,
     draw: () => drawPersonSprite(ctx, anim.px - camX, anim.py - camY, TILE * 0.85, {
