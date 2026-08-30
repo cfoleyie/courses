@@ -63,6 +63,18 @@ export function drawCreature(ctx, cx, cy, s, species, opts = {}) {
 
   drawPattern(ctx, r.pattern, s, sec, body);
 
+  // ---- glossy vinyl-toy sheen (manga-kawaii sticker shine) ----
+  ctx.save();
+  ctx.globalAlpha = 0.4;
+  const glossGrad = ctx.createLinearGradient(-s * 0.4, -s * 0.5, -s * 0.1, -s * 0.1);
+  glossGrad.addColorStop(0, 'rgba(255,255,255,0.9)');
+  glossGrad.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = glossGrad;
+  ctx.beginPath();
+  ctx.ellipse(-s * 0.26, -s * 0.32, s * 0.24, s * 0.15, -0.55, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
   // ---- arms ----
   drawArms(ctx, s, body);
 
@@ -72,38 +84,85 @@ export function drawCreature(ctx, cx, cy, s, species, opts = {}) {
   // ---- front features ----
   if (!['wing'].includes(r.feature)) drawFeature(ctx, r.feature, s, body, sec);
 
-  // ---- face ----
-  const eyeY = -s * 0.08, eyeDX = s * 0.26;
+  // ---- face (big manga-kawaii eyes: colored iris, double sparkle, lash line) ----
+  const eyeY = -s * 0.08, eyeDX = s * 0.27;
+  const eyeH = blink ? s * 0.02 : s * 0.19;
+  const irisTone = lighten(darken(sec, 0.25), 0.05);
   for (const side of [-1, 1]) {
+    ctx.save();
+    ctx.translate(side * eyeDX, eyeY);
+    // sclera
     ctx.fillStyle = '#fff';
     ctx.beginPath();
-    ctx.ellipse(side * eyeDX, eyeY, s * 0.14, blink ? s * 0.02 : s * 0.16, 0, 0, Math.PI * 2);
+    ctx.ellipse(0, 0, s * 0.155, eyeH, 0, 0, Math.PI * 2);
     ctx.fill();
     if (!blink) {
-      ctx.fillStyle = '#2a2a2a';
+      // iris
+      const irisGrad = ctx.createRadialGradient(side * s * 0.01, -s * 0.015, s * 0.01, 0, s * 0.02, eyeH * 0.95);
+      irisGrad.addColorStop(0, lighten(irisTone, 0.3));
+      irisGrad.addColorStop(1, darken(irisTone, 0.2));
+      ctx.fillStyle = irisGrad;
       ctx.beginPath();
-      ctx.arc(side * eyeDX + side * s * 0.02, eyeY + s * 0.03, s * 0.08, 0, Math.PI * 2);
+      ctx.ellipse(side * s * 0.012, s * 0.02, s * 0.125, eyeH * 0.86, 0, 0, Math.PI * 2);
       ctx.fill();
+      // pupil
+      ctx.fillStyle = '#241a1e';
+      ctx.beginPath();
+      ctx.ellipse(side * s * 0.02, s * 0.045, s * 0.062, eyeH * 0.44, 0, 0, Math.PI * 2);
+      ctx.fill();
+      // lash line along the top lid
+      ctx.strokeStyle = darken(irisTone, 0.55);
+      ctx.lineWidth = Math.max(1, s * 0.022);
+      ctx.beginPath();
+      ctx.arc(0, 0, s * 0.15, Math.PI * 1.08, Math.PI * 1.92);
+      ctx.stroke();
+      // big primary sparkle + small secondary sparkle
       ctx.fillStyle = '#fff';
       ctx.beginPath();
-      ctx.arc(side * eyeDX - side * s * 0.02, eyeY - s * 0.03, s * 0.03, 0, Math.PI * 2);
+      ctx.ellipse(-side * s * 0.05, -s * 0.055, s * 0.048, s * 0.06, -0.3, 0, Math.PI * 2);
       ctx.fill();
+      ctx.globalAlpha = 0.85;
+      ctx.beginPath();
+      ctx.arc(side * s * 0.06, s * 0.07, s * 0.022, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
     }
+    ctx.restore();
   }
+
+  // small kawaii sparkle accent
+  drawSparkle(ctx, s * 0.58, -s * 0.62, s * 0.07, '#fff8d9');
+
   // blush
-  ctx.fillStyle = 'rgba(255,120,140,0.45)';
+  ctx.fillStyle = 'rgba(255,110,140,0.5)';
   for (const side of [-1, 1]) {
     ctx.beginPath();
-    ctx.ellipse(side * s * 0.45, s * 0.12, s * 0.12, s * 0.07, 0, 0, Math.PI * 2);
+    ctx.ellipse(side * s * 0.46, s * 0.14, s * 0.13, s * 0.075, 0, 0, Math.PI * 2);
     ctx.fill();
   }
   // smile
   ctx.strokeStyle = darken(body, 0.5);
-  ctx.lineWidth = Math.max(1.2, s * 0.035);
+  ctx.lineWidth = Math.max(1.2, s * 0.032);
+  ctx.lineCap = 'round';
   ctx.beginPath();
-  ctx.arc(0, s * 0.14, s * 0.14, Math.PI * 0.15, Math.PI * 0.85);
+  ctx.arc(0, s * 0.12, s * 0.11, Math.PI * 0.2, Math.PI * 0.8);
   ctx.stroke();
 
+  ctx.restore();
+}
+
+function drawSparkle(ctx, x, y, size, color) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(0, -size);
+  ctx.quadraticCurveTo(size * 0.18, -size * 0.18, size, 0);
+  ctx.quadraticCurveTo(size * 0.18, size * 0.18, 0, size);
+  ctx.quadraticCurveTo(-size * 0.18, size * 0.18, -size, 0);
+  ctx.quadraticCurveTo(-size * 0.18, -size * 0.18, 0, -size);
+  ctx.closePath();
+  ctx.fill();
   ctx.restore();
 }
 
