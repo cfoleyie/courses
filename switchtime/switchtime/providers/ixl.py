@@ -277,29 +277,56 @@ class IXLProvider:
             )
             return False
 
+        # A family account answers a correct sign-in by opening a "Who are you?"
+        # chooser *over* the sign-in page, leaving the URL on /signin. Judging
+        # success by the URL alone therefore calls a working sign-in a failure,
+        # so look for the chooser before believing the address bar.
+        chooser = await self._wait_for_chooser(page, kid)
+        if chooser is not None:
+            result.note("Signed in; the profile chooser appeared.")
+            return await self._select_profile(page, kid, result, dump_to, chooser)
+
         if "signin" not in page.url.lower():
             return await self._select_profile(page, kid, result, dump_to)
 
-        if "signin" in page.url.lower():
-            # Still on the sign-in page after submitting. A wrong password is the
-            # obvious reading, but a school account is at least as likely: those
-            # sign in through Google or Clever, and a username and password box
-            # that exists on the page will simply never work for them.
-            sso = await self._single_sign_on_hints(page)
-            result.note(f"Still on the sign-in page after submitting as {kid.ixl_username!r}.")
-            if sso:
-                result.note(
-                    f"This page offers {', '.join(sso)} sign-in. If his IXL comes through "
-                    "school, there is no password to use here — see the README on school "
-                    "accounts."
-                )
-            else:
-                result.note("Check the username and password, then try again.")
-            return False
-        return True
+        # Still on the sign-in page with no chooser. A wrong password is the
+        # obvious reading; a school account signing in through Google or Clever
+        # is the other, and no password on this page would ever work for it.
+        sso = await self._single_sign_on_hints(page)
+        result.note(f"Still on the sign-in page after submitting as {kid.ixl_username!r}.")
+        if sso:
+            result.note(
+                f"This page offers {', '.join(sso)} sign-in. If his IXL comes through "
+                "school, there is no password to use here — see the README on school "
+                "accounts."
+            )
+        else:
+            result.note("Check the username and password, then try again.")
+        return False
+
+    async def _wait_for_chooser(self, page: Any, kid: KidConfig, timeout_ms: int = 8000) -> Any:
+        """The chooser entry for this child, once it appears. None if it does not.
+
+        The names sit under avatar images and are not necessarily links or
+        buttons, so match the text itself and let Playwright click through to
+        whatever handles it.
+        """
+        if not kid.ixl_profile:
+            return None
+        try:
+            entry = page.get_by_text(kid.ixl_profile, exact=True).first
+            await entry.wait_for(state="visible", timeout=timeout_ms)
+        except Exception:  # noqa: BLE001 - absence is a normal answer here
+            return None
+        return entry
 
     async def _select_profile(
-        self, page: Any, kid: KidConfig, result: ProviderResult, dump_to: Path | None
+        self,
+        page: Any,
+        kid: KidConfig,
+        result: ProviderResult,
+        dump_to: Path | None,
+        entry: Any = None,
     ) -> bool:
         """Pick this child on a family account, and enter their own password.
 
@@ -312,14 +339,10 @@ class IXLProvider:
             return True
 
         try:
-            # Match the name on something clickable rather than anywhere on the
-            # page: the child's name also appears in headings and greetings.
-            candidate = page.locator(
-                f"a:has-text('{kid.ixl_profile}'):visible, "
-                f"button:has-text('{kid.ixl_profile}'):visible, "
-                f"[role='button']:has-text('{kid.ixl_profile}'):visible"
-            ).first
-            if not await candidate.count():
+            candidate = entry if entry is not None else await self._wait_for_chooser(
+                page, kid, timeout_ms=3000
+            )
+            if candidate is None:
                 result.note(
                     f"No profile chooser offering {kid.ixl_profile!r} — assuming the "
                     "session is already on the right child."
