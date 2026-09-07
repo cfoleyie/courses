@@ -304,6 +304,34 @@ class IXLProvider:
             result.note("Check the username and password, then try again.")
         return False
 
+    @staticmethod
+    async def _secret_word_input(page: Any) -> Any:
+        """The per-child "secret word" box, or None if it is not on screen.
+
+        IXL renders it as an ordinary text input, so selecting by type finds the
+        username box on the sign-in form behind the modal instead. These
+        strategies anchor on the prompt text itself, in decreasing precision.
+        """
+        strategies = (
+            # An actual password field, if IXL ever makes it one.
+            "input[type='password']:visible",
+            # The first input after the words "secret word", case-insensitive.
+            "xpath=//*[contains(translate(normalize-space(text()),"
+            "'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),"
+            "'secret word')]/following::input[1]",
+            # A labelled box, however it is worded.
+            "input[placeholder*='secret' i]:visible",
+            "input[aria-label*='secret' i]:visible",
+        )
+        for selector in strategies:
+            try:
+                candidate = page.locator(selector).first
+                if await candidate.count() and await candidate.is_visible():
+                    return candidate
+            except Exception:  # noqa: BLE001 - try the next strategy
+                continue
+        return None
+
     async def _wait_for_chooser(self, page: Any, kid: KidConfig, timeout_ms: int = 8000) -> Any:
         """The chooser entry for this child, once it appears. None if it does not.
 
@@ -354,31 +382,36 @@ class IXLProvider:
             if dump_to is not None:
                 await self._capture(page, dump_to, kid.id, "0b-profile-password")
 
-            # The per-child password prompt appears after the name is chosen.
-            prompt = page.locator("input[type='password']:visible").first
-            if await prompt.count():
+            # IXL calls this a "secret word" and renders it as a plain text box,
+            # not a password field, so it has to be found by what it sits next
+            # to rather than by input type.
+            prompt = await self._secret_word_input(page)
+            if prompt is not None:
                 secret = kid.ixl_profile_password or ""
                 if not secret:
+                    name = kid.ixl_profile_password_env_name or "ixl_profile_password_env"
                     result.note(
-                        f"{kid.ixl_profile} asks for their own password but none is "
-                        "configured. Set ixl_profile_password_env for this kid."
+                        f"{kid.ixl_profile} is asked for a secret word but none is "
+                        f"configured. Run `switchtime set-secret {name}`."
                     )
                     return False
                 await prompt.click()
                 await prompt.fill(secret)
                 typed = await prompt.input_value()
                 result.note(
-                    f"profile prompt holds a {len(typed)}-character password "
+                    f"secret word box holds {len(typed)} characters "
                     f"(configured: {len(secret)})"
                 )
-                button = page.locator(
-                    "button[type='submit']:visible, input[type='submit']:visible, "
-                    "button:has-text('Sign in'):visible, button:has-text('Go'):visible"
-                ).first
-                if await button.count():
-                    await button.click()
-                else:
-                    await prompt.press("Enter")
+                # The arrow beside the box carries no text, so Enter is the
+                # reliable way in; a named button is tried only as a fallback.
+                await prompt.press("Enter")
+                await page.wait_for_timeout(1500)
+                if await self._secret_word_input(page) is not None:
+                    button = page.locator(
+                        "button[type='submit']:visible, input[type='submit']:visible"
+                    ).first
+                    if await button.count():
+                        await button.click()
                 await page.wait_for_load_state("networkidle")
             else:
                 result.note(f"Chose {kid.ixl_profile}; no password was asked for.")

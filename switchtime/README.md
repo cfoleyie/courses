@@ -93,8 +93,9 @@ IXL has no API, so the service signs in and reads the Analytics pages the way
 you would.
 
 **On a family subscription this is two steps**, and both need configuring: you
-sign in with one account, then each child taps their name and enters a short
-password of their own. `ixl_username` is the *family* account, not the child:
+sign in with one account, then each child taps their name and enters what IXL
+calls their **secret word**. `ixl_username` is the *family* account, not the
+child, and `ixl_profile_password_env` holds the secret word:
 
 ```toml
 ixl_username = "family-account-username"

@@ -71,7 +71,7 @@ color = "#3e6fa6"
 ixl_username = "family-account-username"
 ixl_password_env = "IXL_FAMILY_PASSWORD"
 ixl_profile = "Oliver"                   # the name he taps on the chooser
-ixl_profile_password_env = "IXL_PROFILE_OLIVER"
+ixl_profile_password_env = "IXL_PROFILE_OLIVER"   # his "secret word"
 switch_device_id = "REPLACE_ME"          # from: switchtime devices
 # minutes_per_lesson = 30                # optional per-kid override
 
