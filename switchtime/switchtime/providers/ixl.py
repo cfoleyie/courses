@@ -229,9 +229,40 @@ class IXLProvider:
             return False
 
         if "signin" in page.url.lower():
-            result.note(f"IXL rejected the sign-in for {kid.name} — check the password.")
+            # Still on the sign-in page after submitting. A wrong password is the
+            # obvious reading, but a school account is at least as likely: those
+            # sign in through Google or Clever, and a username and password box
+            # that exists on the page will simply never work for them.
+            sso = await self._single_sign_on_hints(page)
+            result.note(f"Still on the sign-in page after submitting as {kid.ixl_username!r}.")
+            if sso:
+                result.note(
+                    f"This page offers {', '.join(sso)} sign-in. If his IXL comes through "
+                    "school, there is no password to use here — see the README on school "
+                    "accounts."
+                )
+            else:
+                result.note("Check the username and password, then try again.")
             return False
         return True
+
+    @staticmethod
+    async def _single_sign_on_hints(page: Any) -> list[str]:
+        """Names of any third-party sign-in options offered on the page."""
+        try:
+            text = (await page.content()).lower()
+        except Exception:  # noqa: BLE001 - a diagnostic must not raise
+            return []
+        return [
+            name
+            for name, needle in (
+                ("Google", "google"),
+                ("Clever", "clever"),
+                ("Microsoft", "microsoft"),
+                ("ClassLink", "classlink"),
+            )
+            if needle in text
+        ]
 
     async def _fallback_from_dom(self, page: Any, today: str, result: ProviderResult) -> list[Lesson]:
         """Last resort: read the rendered report table instead of its JSON."""

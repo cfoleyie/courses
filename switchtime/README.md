@@ -181,8 +181,29 @@ covered by tests, so it can be iterated on without a browser.
 Set `headless = false` in `config.toml` to watch the browser do it, which is
 often faster than reading the artefacts.
 
-If IXL sign-in stops working entirely, the app still works: kids tap **Ask a
-parent for time** and you approve from your phone.
+### School accounts
+
+If your child's IXL comes through their school, they may sign in with Google,
+Clever, Microsoft or ClassLink rather than an IXL password. There is then no
+password for this to use, and the probe will report being stuck on the sign-in
+page while naming the provider it saw.
+
+Options, roughly in order of hassle:
+
+- **A family IXL account.** A separate subscription the app can sign into with a
+  real password. Cleanest, but it is a second account and a second cost, and the
+  school work would not count.
+- **Sign in once by hand.** Set `headless = false`, run
+  `switchtime probe <kid>`, complete the SSO in the window that opens. The
+  session is saved to `data/ixl-sessions/` and reused, so the poller works until
+  it expires — weeks, typically, then you repeat it. No code changes needed.
+- **Skip IXL sync.** Set `enabled = false` under `[ixl]`. Kids tap **Ask a parent
+  for time**, you approve from your phone, and everything else works unchanged.
+
+The second option is the usual answer: one manual sign-in, then it runs itself.
+
+If IXL sign-in stops working entirely, the app still works the same way: kids
+tap **Ask a parent for time** and you approve from your phone.
 
 ## Known limits
 
