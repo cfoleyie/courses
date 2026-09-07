@@ -202,13 +202,22 @@ def cmd_devices(args: argparse.Namespace) -> int:
         if not devices:
             print("No devices on this Nintendo account.")
             return 1
-        print(f"{len(devices)} device(s):\n")
+        print(f"{len(devices)} console(s) on this account:\n")
         for device in devices:
-            print(f"  switch_device_id = \"{device['device_id']}\"")
-            print(f"      model        {device['model'] or 'unknown'}")
-            print(f"      played today {device['played_today']} min")
-            print(f"      limit        {device['limit']}")
+            # The label is whatever the console is called in the Parental
+            # Controls app, and is the only thing that says whose it is.
+            label = device["name"] or "(no nickname set)"
+            limit = device["limit"]
+            limit_text = "not set" if limit in (None, -1) else f"{limit} min"
+            print(f"  {label}")
+            print(f"      switch_device_id = \"{device['device_id']}\"")
+            print(f"      model              {device['model'] or 'unknown'}")
+            print(f"      played today       {device['played_today']} min")
+            print(f"      daily limit        {limit_text}")
             print()
+        print("Put the right id in each [[kids]] block in config.toml.")
+        print("Nicknames come from the Parental Controls app; rename a console")
+        print("there if they are not obvious.\n")
         return 0
 
     return asyncio.run(run())
