@@ -210,3 +210,41 @@ class TestCooldown:
     async def test_scheduled_syncs_do_not(self, engine):
         await engine.sync_kid("oliver", reason="scheduled")
         assert engine.cooldown_remaining("oliver") == 0
+
+
+class TestSwappingConsole:
+    """Testing on a spare Switch, then pointing the kid at the real one."""
+
+    async def test_swapping_console_does_not_invent_a_charge(self, engine, switch, db, config):
+        import dataclasses
+
+        # Settle against a test console that has barely been used.
+        switch.state["oliver"] = SwitchState("test-console", 20, 0, 0, False)
+        await engine.sync_kid("oliver")
+        switch.state["oliver"] = SwitchState("test-console", 35, 0, 0, False)
+        await engine.sync_kid("oliver")
+        assert balance(db.events_for("oliver")) == -15  # 15 min genuinely played
+
+        # Now point the same kid at the real console, which is at 375 today.
+        real = dataclasses.replace(config.kid("oliver"), switch_device_id="real-console")
+        engine.config = dataclasses.replace(
+            config, kids=(real, *[k for k in config.kids if k.id != "oliver"])
+        )
+        switch.state["oliver"] = SwitchState("real-console", 375, 0, 0, False)
+        report = await engine.sync_kid("oliver")
+
+        assert report.minutes_consumed == 0, "375 minutes on a new console is not this kid's debt"
+        assert balance(db.events_for("oliver")) == -15, "balance unchanged by the swap"
+        assert any("Console changed" in m for m in report.messages)
+
+    async def test_the_new_console_is_charged_normally_afterwards(self, engine, switch, db, config):
+        switch.state["oliver"] = SwitchState("real-console", 100, 0, 0, False)
+        await engine.sync_kid("oliver")
+        switch.state["oliver"] = SwitchState("real-console", 130, 0, 0, False)
+        report = await engine.sync_kid("oliver")
+        assert report.minutes_consumed == 30
+
+    async def test_no_message_on_the_very_first_sync(self, engine, switch):
+        switch.state["oliver"] = SwitchState("real-console", 0, 0, 0, False)
+        report = await engine.sync_kid("oliver")
+        assert not any("Console changed" in m for m in report.messages)

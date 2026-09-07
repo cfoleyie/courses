@@ -213,6 +213,21 @@ class SyncEngine:
 
         report.played_today = state.played_today
 
+        # Play-time state is keyed by kid, but the counter it tracks belongs to a
+        # console. Pointing a kid at a different Switch — testing on a spare,
+        # then swapping to the real one — would otherwise difference this
+        # console's total against the previous one's and invent a huge charge.
+        device_key = f"device:{kid.id}"
+        last_device = self.db.get_state(device_key)
+        if last_device != state.device_id:
+            self.db.set_state(f"played:{kid.id}", None)
+            if last_device is not None:
+                report.note(
+                    f"Console changed for {kid.name} — play-time baseline reset, "
+                    "so nothing already on the new console is charged."
+                )
+            self.db.set_state(device_key, state.device_id)
+
         previous = self.db.get_state(f"played:{kid.id}")
         used = consumption_delta(previous, state.played_today)
         if used > 0:
