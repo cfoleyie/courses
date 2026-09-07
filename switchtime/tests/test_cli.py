@@ -264,3 +264,52 @@ class TestGrantCommand:
         args = argparse.Namespace(config=str(config), kid="nobody", minutes=30, note="")
         assert cmd_grant(args) == 1
         assert "oliver" in capsys.readouterr().err
+
+
+class TestIXLBaseUrl:
+    def _write(self, tmp_path, body: str):
+        path = tmp_path / "config.toml"
+        path.write_text(
+            f'[server]\ndatabase = "{tmp_path}/x.db"\n{body}\n'
+            '[[kids]]\nid = "oliver"\nname = "Oliver"\n'
+        )
+        return path
+
+    def test_country_site_drives_signin_and_reports(self, tmp_path):
+        from switchtime.config import load_config
+
+        config = load_config(self._write(tmp_path, '[ixl]\nbase_url = "https://ie.ixl.com"'))
+        assert config.ixl.signin_url == "https://ie.ixl.com/signin"
+        assert all("ie.ixl.com" in url for url in config.ixl.report_urls)
+
+    def test_trailing_slash_does_not_double_up(self, tmp_path):
+        from switchtime.config import load_config
+
+        config = load_config(self._write(tmp_path, '[ixl]\nbase_url = "https://ie.ixl.com/"'))
+        assert config.ixl.signin_url == "https://ie.ixl.com/signin"
+
+    def test_explicit_urls_still_win(self, tmp_path):
+        from switchtime.config import load_config
+
+        config = load_config(
+            self._write(
+                tmp_path,
+                '[ixl]\nbase_url = "https://ie.ixl.com"\n'
+                'signin_url = "https://custom.example/login"\n'
+                'report_urls = ["https://custom.example/report"]',
+            )
+        )
+        assert config.ixl.signin_url == "https://custom.example/login"
+        assert config.ixl.report_urls == ("https://custom.example/report",)
+
+    def test_default_is_the_us_site(self, tmp_path):
+        from switchtime.config import load_config
+
+        config = load_config(self._write(tmp_path, "[ixl]\nenabled = true"))
+        assert config.ixl.signin_url == "https://www.ixl.com/signin"
+
+    def test_the_404_usage_details_path_is_gone(self, tmp_path):
+        from switchtime.config import load_config
+
+        config = load_config(self._write(tmp_path, '[ixl]\nbase_url = "https://ie.ixl.com"'))
+        assert not any("usage-details" in url for url in config.ixl.report_urls)

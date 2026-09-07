@@ -32,13 +32,18 @@ enabled = true
 poll_seconds = 180
 force_poll_cooldown_seconds = 30
 headless = true
+# IXL runs a separate site per country and an account only works on its own.
+# Check the address bar when your child is signed in and match it here:
+#   Ireland https://ie.ixl.com   UK https://uk.ixl.com   US https://www.ixl.com
+#   Canada  https://ca.ixl.com   Australia https://au.ixl.com
+# Signing in on the wrong one fails in a way that looks like a wrong password.
+base_url = "https://www.ixl.com"
 # A skill counts as finished at this SmartScore. IXL treats 80 as proficient.
 # Set to 0 to pay for any skill practised at all.
 min_smartscore = 80
-report_urls = [
-  "https://www.ixl.com/analytics/questions-log",
-  "https://www.ixl.com/analytics/usage-details",
-]
+# Derived from base_url unless set. Only override for an unusual setup.
+# signin_url = "https://www.ixl.com/signin"
+# report_urls = ["https://www.ixl.com/analytics"]
 storage_state_dir = "data/ixl-sessions"
 
 [nintendo]

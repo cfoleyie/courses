@@ -156,6 +156,18 @@ such as Caddy with a real domain, or Cloudflare Tunnel.
 
 ## Tuning the IXL side
 
+**Set your country first.** IXL runs a separate site per country and an account
+only works on its own, so signing in on the wrong one fails in a way that looks
+exactly like a wrong password. Check the address bar while your child is signed
+in and set it in `config.toml`:
+
+```toml
+[ixl]
+base_url = "https://ie.ixl.com"   # uk.ixl.com, ca.ixl.com, au.ixl.com, www.ixl.com
+```
+
+The sign-in and report URLs are derived from it.
+
 **Expect one round of tuning here.** IXL publishes no API, so the scraper reads
 whatever JSON the analytics pages load and keeps objects that look like a
 practised skill: something carrying a name plus a score or a date. That
@@ -281,5 +293,5 @@ limits. A Pi or any always-on box avoids both problems.
 | `tools/make_icons.py` | Regenerates the PWA icons |
 
 ```bash
-pytest        # 144 tests, no network or credentials needed
+pytest        # 149 tests, no network or credentials needed
 ```

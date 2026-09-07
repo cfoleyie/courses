@@ -59,12 +59,16 @@ class IXLConfig:
     force_poll_cooldown_seconds: int = 30
     headless: bool = True
     nav_timeout_ms: int = 45_000
+    # IXL runs a site per country and an account only works on its own. Ireland
+    # is ie.ixl.com, the UK uk.ixl.com, and so on; signing in on the wrong one
+    # fails in a way that looks exactly like a wrong password.
+    base_url: str = "https://www.ixl.com"
     signin_url: str = "https://www.ixl.com/signin"
     # Pages opened after sign-in; every JSON response seen while these load is
     # offered to the extractor.
     report_urls: tuple[str, ...] = (
+        "https://www.ixl.com/analytics",
         "https://www.ixl.com/analytics/questions-log",
-        "https://www.ixl.com/analytics/usage-details",
     )
     # A lesson counts only once its SmartScore reaches this. IXL treats 80 as
     # "proficient"; set to 0 to count any practised skill.
@@ -204,6 +208,7 @@ def load_config(path: str | Path | None = None) -> Config:
     )
 
     ixl_raw = _subtable(raw, "ixl")
+    _base = str(ixl_raw.get("base_url", IXLConfig.base_url)).rstrip("/")
     ixl = IXLConfig(
         enabled=bool(ixl_raw.get("enabled", IXLConfig.enabled)),
         poll_seconds=max(30, int(ixl_raw.get("poll_seconds", IXLConfig.poll_seconds))),
@@ -212,8 +217,14 @@ def load_config(path: str | Path | None = None) -> Config:
         ),
         headless=bool(ixl_raw.get("headless", IXLConfig.headless)),
         nav_timeout_ms=int(ixl_raw.get("nav_timeout_ms", IXLConfig.nav_timeout_ms)),
-        signin_url=ixl_raw.get("signin_url", IXLConfig.signin_url),
-        report_urls=tuple(ixl_raw.get("report_urls", IXLConfig.report_urls)),
+        base_url=_base,
+        # Derived from base_url so a country change is one setting, but still
+        # overridable outright for an unusual setup.
+        signin_url=ixl_raw.get("signin_url") or f"{_base}/signin",
+        report_urls=tuple(
+            ixl_raw.get("report_urls")
+            or (f"{_base}/analytics", f"{_base}/analytics/questions-log")
+        ),
         min_smartscore=int(ixl_raw.get("min_smartscore", IXLConfig.min_smartscore)),
         storage_state_dir=ixl_raw.get("storage_state_dir", IXLConfig.storage_state_dir),
     )
