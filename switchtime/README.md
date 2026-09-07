@@ -122,8 +122,10 @@ parent for time** and you approve from your phone.
 - **Minutes are only charged when a sync runs.** Between polls the console can
   run past a balance that just hit zero. Nothing is lost — the overshoot is
   charged on the next pass and comes off tomorrow.
-- The first sync of a day never charges for play time already on the clock, to
-  avoid double-billing after a restart.
+- The very first sync for a kid never charges for play time already on the
+  clock, so a fresh install cannot open with a large debt. After that a new day
+  starts counting from zero, so play that happened before the day's first sync
+  — overnight, or while the machine was asleep — is still charged.
 
 ## Running it as a service
 
@@ -148,5 +150,5 @@ only directory worth backing up.
 | `switchtime/static/` | The web app |
 
 ```bash
-pytest        # 107 tests, no network or credentials needed
+pytest        # 112 tests, no network or credentials needed
 ```

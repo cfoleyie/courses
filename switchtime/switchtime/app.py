@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field
 
 from .config import Config, load_config
 from .db import Database
-from .ledger import Kind, Status, balance, humanise
+from .ledger import Kind, Status, balance, earned_on, humanise
 from .providers.fake import FakeProvider
 from .providers.ixl import IXLProvider
 from .switch import NullSwitchClient, SwitchClient
@@ -84,7 +84,9 @@ def build_app(config: Config | None = None, *, provider: Any = None, switch: Any
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
-        if config.ixl.enabled:
+        # The poller is not only the IXL reader: it also charges play time and
+        # writes the console limit, so it has to run whenever either side is on.
+        if config.ixl.enabled or config.nintendo.enabled:
             await engine.start()
         try:
             yield
@@ -112,7 +114,11 @@ def build_app(config: Config | None = None, *, provider: Any = None, switch: Any
 
     @app.post("/api/parent/unlock")
     async def unlock(body: PinBody, response: Response) -> dict[str, bool]:
-        if not secrets.compare_digest(body.pin, config.server.parent_pin):
+        # Compare bytes: compare_digest refuses non-ASCII str, and a PIN typed
+        # with an accented character must simply be wrong, not a 500.
+        supplied = body.pin.encode("utf-8")
+        expected = config.server.parent_pin.encode("utf-8")
+        if not secrets.compare_digest(supplied, expected):
             # Cheap throttle: a wrong PIN costs a second, which makes guessing
             # a four-digit code over the LAN tedious without locking anyone out.
             await asyncio.sleep(1.0)
@@ -143,7 +149,7 @@ def build_app(config: Config | None = None, *, provider: Any = None, switch: Any
             "balance": current,
             "balance_text": humanise(current),
             "minutes_per_lesson": config.minutes_for(kid_id),
-            "earned_today": engine.earned_today(kid_id),
+            "earned_today": earned_on(events, engine.today()),
             "daily_cap": config.rules.daily_earn_cap_minutes,
             "pending": len(db.pending(kid_id)),
             "cooldown": engine.cooldown_remaining(kid_id),

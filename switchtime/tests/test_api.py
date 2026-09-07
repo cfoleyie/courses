@@ -51,6 +51,11 @@ class TestParentAuth:
         response = client.post("/api/kids/oliver/adjust", json={"minutes": 500, "note": "x"})
         assert response.status_code in (401, 422)
 
+    def test_a_non_ascii_pin_is_refused_not_a_crash(self, client):
+        # compare_digest refuses non-ASCII str outright; a typed accent has to be
+        # an ordinary wrong PIN rather than a 500 that skips the throttle.
+        assert client.post("/api/parent/unlock", json={"pin": "é234"}).status_code == 403
+
     def test_lock_ends_the_session(self, parent):
         parent.post("/api/parent/lock")
         assert parent.get("/api/state").json()["parent"] is False
@@ -120,6 +125,25 @@ class TestStatic:
 
     def test_health(self, client):
         assert client.get("/api/health").json()["ok"] is True
+
+
+class TestPoller:
+    def test_it_runs_even_with_ixl_switched_off(self, config, provider, switch):
+        # The poller is not only the IXL reader: it charges play time and writes
+        # the console limit, both of which still matter when IXL is off.
+        import dataclasses
+
+        from switchtime.config import IXLConfig, NintendoConfig
+
+        cfg = dataclasses.replace(
+            config,
+            ixl=IXLConfig(enabled=False),
+            nintendo=NintendoConfig(enabled=True, dry_run=True),
+        )
+        app = build_app(cfg, provider=provider, switch=switch)
+        with TestClient(app):
+            task = app.state.engine._task
+            assert task is not None and not task.done()
 
 
 def _kid(client, kid_id):

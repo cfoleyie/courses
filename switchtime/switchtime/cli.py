@@ -140,8 +140,15 @@ def cmd_probe(args: argparse.Namespace) -> int:
 def cmd_sync(args: argparse.Namespace) -> int:
     async def run() -> int:
         config = load_config(args.config)
+        known = [k.id for k in config.kids]
+        if args.kid and args.kid not in known:
+            print(
+                f"No kid called {args.kid!r}. Configured: {', '.join(known)}",
+                file=sys.stderr,
+            )
+            return 1
         engine = _engine(config)
-        targets = [args.kid] if args.kid else [k.id for k in config.kids]
+        targets = [args.kid] if args.kid else known
         failures = 0
         for kid_id in targets:
             report = await engine.sync_kid(kid_id, reason="cli")

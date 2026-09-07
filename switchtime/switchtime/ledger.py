@@ -31,7 +31,9 @@ class Status(StrEnum):
     REJECTED = "rejected"
 
 
-#: Kinds that add to a balance and are therefore subject to the daily earn cap.
+#: Kinds that count towards the daily earn cap. An approved manual claim uses
+#: up cap headroom like an IXL lesson does, but is not itself trimmed by it:
+#: a parent tapping Yes is a deliberate override, the same as an ADJUST.
 EARN_KINDS = frozenset({Kind.EARN_IXL, Kind.EARN_MANUAL})
 
 

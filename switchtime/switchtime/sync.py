@@ -139,10 +139,12 @@ class SyncEngine:
         if stored == today:
             return
         if stored is not None:
-            # The console's play-time counter resets at midnight, so the last
-            # figure we saw belongs to yesterday and must not be differenced
-            # against today's.
-            self.db.set_state(f"played:{kid.id}", None)
+            # The console's counter resets to zero at midnight, so zero — not
+            # "unknown" — is the new day's true baseline. Storing None here
+            # instead would make the first sync of every day charge nothing,
+            # handing over any play that happened before it (a whole morning,
+            # if the machine running this was asleep overnight).
+            self.db.set_state(f"played:{kid.id}", 0)
             expiry = expiry_event(
                 self.db.events_for(kid.id), kid.id, stored, now, self.config.rules
             )
@@ -230,8 +232,10 @@ class SyncEngine:
         self.db.set_state(f"played:{kid.id}", state.played_today)
 
         current_balance = balance(self.db.events_for(kid.id))
+        # Nintendo will not accept more than MAX_LIMIT; a parent may cap it lower.
+        ceiling = min(MAX_LIMIT, max(0, self.config.nintendo.max_daily_minutes))
         target = target_daily_limit(
-            current_balance, state.played_today, self.config.rules, ceiling=MAX_LIMIT
+            current_balance, state.played_today, self.config.rules, ceiling=ceiling
         )
         report.target_limit = target
 

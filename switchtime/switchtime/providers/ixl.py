@@ -14,6 +14,7 @@ import logging
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from ..config import Config, IXLConfig, KidConfig
 from .base import Lesson, ProviderError, ProviderResult
@@ -42,6 +43,10 @@ class IXLProvider:
         self._playwright: Any = None
         self._browser: Any = None
         self._lock = asyncio.Lock()
+        # The ledger books everything in the configured timezone; day strings
+        # are part of every lesson ref, so the scraper must agree with it
+        # rather than following whatever the host clock is set to.
+        self._tz = ZoneInfo(config.server.timezone)
         self._state_dir = Path(self._ixl.storage_state_dir)
         self._state_dir.mkdir(parents=True, exist_ok=True)
         self.last_error: str | None = None
@@ -126,7 +131,17 @@ class IXLProvider:
             except (json.JSONDecodeError, UnicodeDecodeError):
                 return
 
-        page.on("response", lambda r: asyncio.ensure_future(on_response(r)))
+        # Playwright hands responses to a sync callback, so each read runs as its
+        # own task. Hold a reference: an un-awaited task can be garbage-collected
+        # mid-flight, which would silently lose the payload it was reading.
+        handlers: set[asyncio.Task] = set()
+
+        def capture(response: Any) -> None:
+            task = asyncio.ensure_future(on_response(response))
+            handlers.add(task)
+            task.add_done_callback(handlers.discard)
+
+        page.on("response", capture)
 
         try:
             signed_in = await self._ensure_signed_in(page, kid, result)
@@ -143,17 +158,24 @@ class IXLProvider:
                 # Reports lazy-load their tables after the shell paints.
                 await page.wait_for_timeout(2500)
 
+            # Let any response still being read finish before extracting.
+            if handlers:
+                await asyncio.wait(set(handlers), timeout=10)
+
             await context.storage_state(path=str(state_path))
 
-            today = datetime.now().date().isoformat()
-            since = (datetime.now() - timedelta(days=3)).date().isoformat()
+            now = datetime.now(self._tz)
+            today = now.date().isoformat()
+            since = (now - timedelta(days=3)).date().isoformat()
             lessons = extract_lessons(
                 payloads,
                 today=today,
                 min_smartscore=self._ixl.min_smartscore,
                 since_day=since,
             )
-            if not lessons and payloads:
+            # A last resort, and the JSON-free case is exactly when it is needed:
+            # do not make it conditional on having seen any JSON at all.
+            if not lessons:
                 lessons = await self._fallback_from_dom(page, today, result)
 
             result.lessons = lessons

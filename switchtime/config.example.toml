@@ -48,6 +48,10 @@ dry_run = true
 timezone = "Europe/Dublin"
 lang = "en-GB"
 session_token_env = "NINTENDO_SESSION_TOKEN"
+# Hard ceiling on the daily limit written to the console. Nintendo itself
+# refuses anything above 360; lower it to cap the console regardless of what
+# has been earned.
+max_daily_minutes = 360
 
 # One block per child. Play-time limits are enforced per console, not per user
 # account, so this only behaves as intended with one child per Switch.

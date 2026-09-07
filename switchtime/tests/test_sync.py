@@ -98,6 +98,20 @@ class TestConsole:
         assert report.target_limit == 45
 
 
+    async def test_the_console_ceiling_can_be_lowered(self, engine, config, switch):
+        import dataclasses
+
+        from switchtime.config import NintendoConfig
+
+        engine.config = dataclasses.replace(
+            config, nintendo=NintendoConfig(enabled=False, dry_run=True, max_daily_minutes=90)
+        )
+        engine.adjust("oliver", 300, "banked a lot")
+        switch.state["oliver"] = SwitchState("d", 0, 0, 0, False)
+        report = await engine.sync_kid("oliver")
+        assert report.target_limit == 90, "max_daily_minutes must cap the console"
+
+
 class TestFailureIsolation:
     async def test_ixl_outage_still_settles_the_console(self, engine, provider, switch):
         provider.fail_with = "IXL timed out"
@@ -122,13 +136,32 @@ class TestFailureIsolation:
 
 
 class TestDayRollover:
-    async def test_new_day_resets_the_play_counter(self, engine, switch, db):
+    async def test_yesterdays_total_is_never_differenced_against_today(self, engine, switch, db):
         switch.state["oliver"] = SwitchState("d", 100, 100, 0, False)
         await engine.sync_kid("oliver")
         db.set_state("day:oliver", "2026-01-01")  # pretend the last run was long ago
         switch.state["oliver"] = SwitchState("d", 5, 100, 95, False)
         report = await engine.sync_kid("oliver")
-        assert report.minutes_consumed == 0, "yesterday's total must not be differenced"
+        # 5, not 95: the counter restarted, so the baseline restarts at zero too.
+        assert report.minutes_consumed == 5
+
+    async def test_play_before_the_first_sync_of_a_day_is_still_charged(self, engine, switch, db):
+        # The machine running this can be asleep overnight. Whatever the console
+        # logged since midnight is real play and must not be given away.
+        switch.state["oliver"] = SwitchState("d", 0, 0, 0, False)
+        await engine.sync_kid("oliver")
+        db.set_state("day:oliver", "2026-01-01")
+        switch.state["oliver"] = SwitchState("d", 45, 0, 0, False)
+        report = await engine.sync_kid("oliver")
+        assert report.minutes_consumed == 45
+
+    async def test_a_kid_never_seen_before_is_not_billed_for_the_backlog(self, engine, switch, db):
+        # Day one of the install: the console may already show hours played.
+        # Charging those would put a kid deeply negative before they started.
+        switch.state["oliver"] = SwitchState("d", 200, None, None, False)
+        report = await engine.sync_kid("oliver")
+        assert report.minutes_consumed == 0
+        assert balance(db.events_for("oliver")) == 0
 
     async def test_balance_expires_overnight_when_rollover_is_off(self, engine, provider, db, config):
         import dataclasses
