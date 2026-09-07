@@ -50,13 +50,42 @@ step "Installing the headless browser IXL is read through"
 if [ "${SWITCHTIME_SKIP_BROWSER:-}" = "1" ]; then
   warn "skipped (SWITCHTIME_SKIP_BROWSER=1)"
 else
-  # Needs system libraries; install-deps is a no-op if they are already present.
-  if command -v sudo >/dev/null 2>&1; then
-    playwright install-deps chromium >/dev/null 2>&1 || \
-      warn "could not install system libraries automatically — if the browser fails later, run: sudo \$(which playwright) install-deps chromium"
-  fi
   playwright install chromium >/dev/null
-  ok "chromium ready"
+  ok "chromium downloaded"
+
+  # Chromium needs system libraries that a minimal Debian install (a Chromebook
+  # container, for one) does not ship. Installing them needs root, so this asks
+  # for a password rather than failing quietly later when a sync runs.
+  PLAYWRIGHT_BIN="$(command -v playwright)"
+  if [ "$(id -u)" = "0" ]; then
+    "$PLAYWRIGHT_BIN" install-deps chromium >/dev/null 2>&1 || warn "install-deps reported a problem"
+  elif command -v sudo >/dev/null 2>&1; then
+    if sudo -n true 2>/dev/null; then
+      sudo "$PLAYWRIGHT_BIN" install-deps chromium >/dev/null 2>&1 || warn "install-deps reported a problem"
+    else
+      printf '  Chromium needs some system libraries. Enter your password to install them,\n'
+      printf '  or press Ctrl-C and run this yourself later:\n'
+      printf '    sudo %s install-deps chromium\n\n' "$PLAYWRIGHT_BIN"
+      sudo "$PLAYWRIGHT_BIN" install-deps chromium >/dev/null || \
+        warn "could not install system libraries — the browser check below will tell you if it matters"
+    fi
+  else
+    warn "no sudo available; if the browser check below fails, install Chromium's libraries by hand"
+  fi
+
+  # Prove it actually launches. A missing library shows up here, at setup time,
+  # rather than at 7pm when a lesson is finished and nothing happens.
+  if python - <<'PYEOF' 2>/dev/null
+from playwright.sync_api import sync_playwright
+with sync_playwright() as p:
+    p.chromium.launch(headless=True).close()
+PYEOF
+  then
+    ok "chromium launches"
+  else
+    warn "chromium will not launch. IXL syncing will not work until this is fixed."
+    warn "Try: sudo $PLAYWRIGHT_BIN install-deps chromium"
+  fi
 fi
 
 step "Setting up the config file"
