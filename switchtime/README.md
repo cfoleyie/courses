@@ -167,11 +167,19 @@ that tells you whether it matches.
 switchtime probe oliver --out data/probe
 ```
 
-That signs in, saves every JSON payload it saw, and prints what it matched. If
-nothing matched, open the dumped JSON, find the objects describing finished
-skills, and widen the key lists at the top of
-`switchtime/providers/ixl_extract.py`. The extraction logic is pure and covered
-by tests, so you can iterate on it without a browser.
+That signs in and saves, per page: a full-page screenshot, the rendered HTML,
+and every JSON payload it saw. It then prints what it matched and, when nothing
+did, a checklist working outwards from the most likely cause.
+
+The screenshots are the useful part. `*-1-after-signin.png` shows whether the
+sign-in worked at all; `*-report.png` shows whether `report_urls` point at the
+right pages. Only once those look right is it worth reading the JSON, and then
+the job is to find a skill name you can see in the screenshot and add the keys
+around it to `switchtime/providers/ixl_extract.py`. That logic is pure and
+covered by tests, so it can be iterated on without a browser.
+
+Set `headless = false` in `config.toml` to watch the browser do it, which is
+often faster than reading the artefacts.
 
 If IXL sign-in stops working entirely, the app still works: kids tap **Ask a
 parent for time** and you approve from your phone.

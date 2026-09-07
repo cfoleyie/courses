@@ -237,16 +237,33 @@ def cmd_probe(args: argparse.Namespace) -> int:
             return 1
         finally:
             await provider.close()
+        print("\nWhat happened:")
         for line in result.diagnostics:
             print(f"  - {line}")
+
         print(f"\n{len(result.lessons)} lesson(s) matched:")
         for lesson in result.lessons:
             print(f"  {lesson.day}  {lesson.describe()}   ref={lesson.ref}")
+
+        saved = sorted(out.glob(f"{args.kid}-*"))
+        if saved:
+            print(f"\nSaved to {out}/ :")
+            for item in saved:
+                print(f"  {item.name}  ({item.stat().st_size // 1024} KB)")
+
         if not result.lessons:
             print(
-                "\nNothing matched. Open the JSON in "
-                f"{out} and look for the objects that describe finished skills, "
-                "then widen the key lists in providers/ixl_extract.py."
+                "\nNothing matched. Work through these in order:\n"
+                "  1. Open the *-1-after-signin.png screenshot. If it shows a login\n"
+                "     page, the sign-in failed — check the username and password.\n"
+                "  2. Open the *-report.png screenshots. If they are the wrong pages,\n"
+                "     fix report_urls in config.toml.\n"
+                "  3. If the reports look right but nothing matched, lower\n"
+                "     min_smartscore (0 counts any skill practised at all).\n"
+                "  4. If it is still empty, the skills are in the dumped JSON under\n"
+                "     key names the extractor does not know. Search the .json for a\n"
+                "     skill name you can see in the screenshot, then add its keys to\n"
+                "     switchtime/providers/ixl_extract.py."
             )
         return 0
 

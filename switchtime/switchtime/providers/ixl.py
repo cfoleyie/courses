@@ -145,11 +145,14 @@ class IXLProvider:
 
         try:
             signed_in = await self._ensure_signed_in(page, kid, result)
+            if dump_to is not None:
+                await self._capture(page, dump_to, kid.id, "1-after-signin")
+                result.note(f"after sign-in, the browser was at {page.url}")
             if not signed_in:
                 result.ok = False
                 return result
 
-            for url in self._ixl.report_urls:
+            for index, url in enumerate(self._ixl.report_urls, start=2):
                 try:
                     await page.goto(url, wait_until="networkidle")
                 except Exception as exc:  # noqa: BLE001 - one bad report is survivable
@@ -157,6 +160,9 @@ class IXLProvider:
                     continue
                 # Reports lazy-load their tables after the shell paints.
                 await page.wait_for_timeout(2500)
+                if dump_to is not None:
+                    await self._capture(page, dump_to, kid.id, f"{index}-report")
+                    result.note(f"{url} settled at {page.url}")
 
             # Let any response still being read finish before extracting.
             if handlers:
@@ -200,14 +206,25 @@ class IXLProvider:
             return True  # stored cookies were still good
 
         try:
-            await page.fill("input[name='username'], input#ql-signin-username", kid.ixl_username or "")
-            await page.fill("input[name='password'], input#ql-signin-password", kid.ixl_password or "")
-            await page.click("button[type='submit'], input[type='submit']")
+            # Find the fields by role rather than by id. IXL's markup is not a
+            # contract, but "the password box, and the text box next to it" is
+            # stable in a way that a generated element id is not.
+            password = page.locator("input[type='password']").first
+            await password.wait_for(state="visible", timeout=self._ixl.nav_timeout_ms)
+            username = page.locator(
+                "input[type='text']:visible, input[type='email']:visible, "
+                "input[name*='user' i]:visible"
+            ).first
+            await username.fill(kid.ixl_username or "")
+            await password.fill(kid.ixl_password or "")
+            # Enter submits every sign-in form; a submit button is not always one.
+            await password.press("Enter")
             await page.wait_for_load_state("networkidle")
         except Exception as exc:  # noqa: BLE001
             result.note(
-                "Sign-in form did not match the expected fields "
-                f"({type(exc).__name__}). Run `switchtime probe` to see the page."
+                "Could not fill the sign-in form "
+                f"({type(exc).__name__}). Run `switchtime probe {kid.id}` and look at "
+                "the saved screenshot to see what the page actually showed."
             )
             return False
 
@@ -236,6 +253,25 @@ class IXLProvider:
         if lessons:
             result.note("Matched from the rendered table rather than JSON.")
         return lessons
+
+    @staticmethod
+    async def _capture(page: Any, out_dir: Path, kid_id: str, label: str) -> None:
+        """Save a screenshot and the rendered HTML.
+
+        The scraper has to work against an account nobody but its owner can see,
+        so when it fails the only way to say why is to show the page it was
+        looking at.
+        """
+        out_dir.mkdir(parents=True, exist_ok=True)
+        stem = out_dir / f"{kid_id}-{label}"
+        try:
+            await page.screenshot(path=f"{stem}.png", full_page=True)
+        except Exception:  # noqa: BLE001 - a diagnostic must not raise
+            pass
+        try:
+            (stem.with_suffix(".html")).write_text(await page.content(), encoding="utf-8")
+        except Exception:  # noqa: BLE001
+            pass
 
     # ----- diagnostics ---------------------------------------------------
 
