@@ -74,18 +74,18 @@ def _env_local_path(config_path: str | None) -> Path:
     return base / ".env.local"
 
 
-def _store_token(env_path: Path, token: str) -> None:
-    """Write NINTENDO_SESSION_TOKEN into .env.local, replacing any existing line.
+def _store_secret(env_path: Path, key: str, value: str) -> None:
+    """Write KEY=value into .env.local, replacing any existing line for KEY.
 
-    Written before the chmod on a fresh file would be a small window with the
-    token world-readable, so the file is created restricted and then filled.
+    Creating the file restricted before writing to it avoids a window where the
+    secret exists world-readable.
     """
-    line = f"NINTENDO_SESSION_TOKEN={token}"
+    line = f"{key}={value}"
     if env_path.exists():
         kept = [
             existing
             for existing in env_path.read_text(encoding="utf-8").splitlines()
-            if not existing.startswith("NINTENDO_SESSION_TOKEN=")
+            if not existing.startswith(f"{key}=")
         ]
         body = "\n".join([*kept, line]).strip() + "\n"
     else:
@@ -169,7 +169,7 @@ def cmd_nintendo_login(args: argparse.Namespace) -> int:
                     return 0
                 env_path = _env_local_path(args.config)
                 try:
-                    _store_token(env_path, token)
+                    _store_secret(env_path, "NINTENDO_SESSION_TOKEN", token)
                 except OSError as exc:
                     print(f"\nCould not write {env_path}: {exc}", file=sys.stderr)
                     print("Re-run with --print-token to get it on screen instead.", file=sys.stderr)
@@ -363,24 +363,63 @@ def cmd_check_config(args: argparse.Namespace) -> int:
     return 0
 
 
+def missing_secret_vars(config: Config) -> list[tuple[str, str]]:
+    """(who it is for, variable name) for every declared but empty secret."""
+    out: list[tuple[str, str]] = []
+    if not config.ixl.enabled:
+        return out
+    for kid in config.kids:
+        if kid.ixl_username and not kid.ixl_password:
+            out.append((kid.name, kid.ixl_password_env_name or "ixl_password_env"))
+        if kid.ixl_profile and not kid.ixl_profile_password:
+            out.append(
+                (f"{kid.name} (profile)", kid.ixl_profile_password_env_name or "ixl_profile_password_env")
+            )
+    return out
+
+
+def cmd_set_secret(args: argparse.Namespace) -> int:
+    """Prompt for a secret and write it to .env.local without echoing it."""
+    import getpass
+
+    config = load_config(args.config)
+    env_path = _env_local_path(args.config)
+    targets = [args.name] if args.name else [name for _, name in missing_secret_vars(config)]
+    if not targets:
+        print("Nothing missing — every declared secret already has a value.")
+        return 0
+
+    for name in targets:
+        try:
+            value = getpass.getpass(f"Value for {name} (typing is hidden): ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print("\nAborted.", file=sys.stderr)
+            return 1
+        if not value:
+            print(f"Nothing entered for {name}, skipping.", file=sys.stderr)
+            continue
+        _store_secret(env_path, name, value)
+        print(f"  {name} saved to {env_path} ({len(value)} characters)")
+
+    print("\nRun `switchtime check-config` to confirm.")
+    return 0
+
+
 def missing_secrets(config: Config) -> list[str]:
     """Name the environment variables that are declared but empty.
 
     An unset password is otherwise indistinguishable from a wrong one once a
     browser is involved, so it is worth catching before anything launches.
     """
-    problems: list[str] = []
-    for kid in config.kids:
-        if not config.ixl.enabled:
-            break
-        if kid.ixl_username and not kid.ixl_password:
-            name = kid.ixl_password_env_name or "ixl_password_env"
-            problems.append(f"{kid.name}: {name} is empty or unset in .env.local.")
-        if kid.ixl_profile and not kid.ixl_profile_password:
-            name = kid.ixl_profile_password_env_name or "ixl_profile_password_env"
-            problems.append(f"{kid.name}: {name} is empty or unset in .env.local.")
-        if kid.ixl_password and not kid.ixl_username:
-            problems.append(f"{kid.name}: a password is set but ixl_username is missing.")
+    problems = [
+        f"{who}: {name} is unset in .env.local — run `switchtime set-secret {name}`"
+        for who, name in missing_secret_vars(config)
+    ]
+    problems += [
+        f"{kid.name}: a password is set but ixl_username is missing."
+        for kid in config.kids
+        if kid.ixl_password and not kid.ixl_username
+    ]
     return problems
 
 
@@ -423,6 +462,12 @@ def build_parser() -> argparse.ArgumentParser:
     grant.add_argument("minutes", type=int, help="negative to take time away")
     grant.add_argument("--note", default="")
     grant.set_defaults(func=cmd_grant)
+
+    secret = sub.add_parser(
+        "set-secret", help="store a password in .env.local without echoing it"
+    )
+    secret.add_argument("name", nargs="?", help="variable name; omit to fill in every missing one")
+    secret.set_defaults(func=cmd_set_secret)
 
     status = sub.add_parser("status", help="show balances")
     status.set_defaults(func=cmd_status)

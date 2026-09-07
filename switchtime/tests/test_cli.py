@@ -44,43 +44,43 @@ class TestOAuthState:
 
 class TestTokenStorage:
     def test_creates_env_local_with_the_token(self, tmp_path):
-        from switchtime.cli import _store_token
+        from switchtime.cli import _store_secret
 
         env = tmp_path / ".env.local"
-        _store_token(env, "TOKEN123")
+        _store_secret(env, "NINTENDO_SESSION_TOKEN", "TOKEN123")
         assert "NINTENDO_SESSION_TOKEN=TOKEN123" in env.read_text()
 
     def test_file_is_not_readable_by_others(self, tmp_path):
-        from switchtime.cli import _store_token
+        from switchtime.cli import _store_secret
 
         env = tmp_path / ".env.local"
-        _store_token(env, "TOKEN123")
+        _store_secret(env, "NINTENDO_SESSION_TOKEN", "TOKEN123")
         assert oct(env.stat().st_mode)[-3:] == "600"
 
     def test_replaces_an_existing_token_rather_than_appending(self, tmp_path):
-        from switchtime.cli import _store_token
+        from switchtime.cli import _store_secret
 
         env = tmp_path / ".env.local"
         env.write_text("NINTENDO_SESSION_TOKEN=OLD\nIXL_PASSWORD_OLIVER=hunter2\n")
-        _store_token(env, "NEW")
+        _store_secret(env, "NINTENDO_SESSION_TOKEN", "NEW")
         body = env.read_text()
         assert "OLD" not in body
         assert body.count("NINTENDO_SESSION_TOKEN=") == 1
 
     def test_keeps_the_other_secrets(self, tmp_path):
-        from switchtime.cli import _store_token
+        from switchtime.cli import _store_secret
 
         env = tmp_path / ".env.local"
         env.write_text("NINTENDO_SESSION_TOKEN=OLD\nIXL_PASSWORD_OLIVER=hunter2\n")
-        _store_token(env, "NEW")
+        _store_secret(env, "NINTENDO_SESSION_TOKEN", "NEW")
         assert "IXL_PASSWORD_OLIVER=hunter2" in env.read_text()
 
     def test_replacing_a_blank_placeholder(self, tmp_path):
-        from switchtime.cli import _store_token
+        from switchtime.cli import _store_secret
 
         env = tmp_path / ".env.local"
         env.write_text("NINTENDO_SESSION_TOKEN=\nIXL_PASSWORD_ALICE=x\n")
-        _store_token(env, "NEW")
+        _store_secret(env, "NINTENDO_SESSION_TOKEN", "NEW")
         assert "NINTENDO_SESSION_TOKEN=NEW" in env.read_text()
 
 
@@ -152,7 +152,7 @@ class TestEnvFileLoading:
 
     def test_login_then_devices_sees_the_token(self, tmp_path, monkeypatch):
         """The exact sequence that would otherwise fail: save, then read back."""
-        from switchtime.cli import _store_token
+        from switchtime.cli import _store_secret
         from switchtime.config import load_config
 
         monkeypatch.delenv("NINTENDO_SESSION_TOKEN", raising=False)
@@ -162,7 +162,7 @@ class TestEnvFileLoading:
             '[nintendo]\nsession_token_env = "NINTENDO_SESSION_TOKEN"\n'
             '[[kids]]\nid = "oliver"\nname = "Oliver"\n'
         )
-        _store_token(tmp_path / ".env.local", "TOKEN-FROM-LOGIN")
+        _store_secret(tmp_path / ".env.local", "NINTENDO_SESSION_TOKEN", "TOKEN-FROM-LOGIN")
         assert load_config(config_path).nintendo.session_token == "TOKEN-FROM-LOGIN"
 
 
@@ -439,3 +439,47 @@ class TestMissingSecrets:
             'ixl_username = "Franpod"\nixl_password_env = "IXL_FAMILY_PASSWORD"\n'
         )
         assert missing_secrets(load_config(path)) == []
+
+
+class TestSetSecret:
+    def test_writes_a_named_secret_without_disturbing_others(self, tmp_path):
+        from switchtime.cli import _store_secret
+
+        env = tmp_path / ".env.local"
+        env.write_text("NINTENDO_SESSION_TOKEN=keep-me\n")
+        _store_secret(env, "THE_MAIN_LOGIN_PWD", "s3cret")
+        body = env.read_text()
+        assert "THE_MAIN_LOGIN_PWD=s3cret" in body
+        assert "NINTENDO_SESSION_TOKEN=keep-me" in body
+
+    def test_replaces_rather_than_duplicating(self, tmp_path):
+        from switchtime.cli import _store_secret
+
+        env = tmp_path / ".env.local"
+        _store_secret(env, "K", "one")
+        _store_secret(env, "K", "two")
+        body = env.read_text()
+        assert body.count("K=") == 1
+        assert "two" in body and "one" not in body
+
+    def test_stays_private(self, tmp_path):
+        from switchtime.cli import _store_secret
+
+        env = tmp_path / ".env.local"
+        _store_secret(env, "K", "v")
+        assert oct(env.stat().st_mode)[-3:] == "600"
+
+    def test_missing_vars_are_listed_by_name(self, tmp_path, monkeypatch):
+        from switchtime.cli import missing_secret_vars
+        from switchtime.config import load_config
+
+        monkeypatch.delenv("THE_MAIN_LOGIN_PWD", raising=False)
+        monkeypatch.setenv("IXL_PROFILE_OLIVER", "set")
+        path = tmp_path / "config.toml"
+        path.write_text(
+            f'[server]\ndatabase = "{tmp_path}/s.db"\n[[kids]]\n'
+            'id = "oliver"\nname = "Oliver"\n'
+            'ixl_username = "Franpod"\nixl_password_env = "THE_MAIN_LOGIN_PWD"\n'
+            'ixl_profile = "Oliver"\nixl_profile_password_env = "IXL_PROFILE_OLIVER"\n'
+        )
+        assert missing_secret_vars(load_config(path)) == [("Oliver", "THE_MAIN_LOGIN_PWD")]

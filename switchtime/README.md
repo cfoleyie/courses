@@ -103,13 +103,17 @@ ixl_profile = "Oliver"                   # the name he taps on the chooser
 ixl_profile_password_env = "IXL_PROFILE_OLIVER"
 ```
 
-Leave the two `profile` lines out if your child signs in directly with their own
-username. Then put the passwords in `.env.local`:
+Note that `ixl_password_env` is the **name of an environment variable**, not the
+password. The passwords themselves go in `.env.local`, and this fills them in
+without echoing them or putting them in your shell history:
 
+```bash
+switchtime set-secret            # prompts for every missing one
+switchtime set-secret NAME       # or just the one
 ```
-IXL_FAMILY_PASSWORD=...
-IXL_PROFILE_OLIVER=...
-```
+
+Leave the two `profile` lines out if your child signs in directly with their own
+username.
 
 Every command reads `.env.local` from beside `config.toml`, and so does the
 background service, so the secrets are configured once. A real environment
@@ -307,5 +311,5 @@ limits. A Pi or any always-on box avoids both problems.
 | `tools/make_icons.py` | Regenerates the PWA icons |
 
 ```bash
-pytest        # 156 tests, no network or credentials needed
+pytest        # 160 tests, no network or credentials needed
 ```
