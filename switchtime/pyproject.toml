@@ -1,0 +1,29 @@
+[project]
+name = "switchtime"
+version = "0.1.0"
+description = "Turn IXL lessons into Nintendo Switch play time."
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi>=0.110",
+  "uvicorn[standard]>=0.27",
+  "pydantic>=2.6",
+  "aiohttp>=3.9",
+  "pynintendoparental>=2.0",
+  "playwright>=1.42",
+]
+
+[project.scripts]
+switchtime = "switchtime.cli:main"
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "pytest-asyncio>=0.23", "httpx>=0.27"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["switchtime*"]
+
+[tool.setuptools.package-data]
+switchtime = ["static/*"]

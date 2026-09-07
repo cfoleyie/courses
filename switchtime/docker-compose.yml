@@ -1,0 +1,17 @@
+services:
+  switchtime:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "8777:8777"
+    volumes:
+      - ./config.toml:/app/config.toml:ro
+      - ./data:/app/data
+    environment:
+      # Populated from a .env file beside this compose file.
+      NINTENDO_SESSION_TOKEN: ${NINTENDO_SESSION_TOKEN}
+      IXL_PASSWORD_OLIVER: ${IXL_PASSWORD_OLIVER}
+      IXL_PASSWORD_ELEANOR: ${IXL_PASSWORD_ELEANOR:-}
+      IXL_PASSWORD_ALICE: ${IXL_PASSWORD_ALICE:-}
+      SWITCHTIME_PIN: ${SWITCHTIME_PIN:-1234}
+      TZ: Europe/Dublin
