@@ -113,15 +113,15 @@ ${BOLD}Setup finished.${OFF} ${DIM}Everything below happens in this directory:${
 
 ${BOLD}What is left, in order:${OFF}
 
-  ${BOLD}1.${OFF} Link the Nintendo account and find your console ids:
+  ${BOLD}1.${OFF} Link the Nintendo account and find your console ids. The login saves
+     the token to .env.local itself, so there is nothing to copy:
        source .venv/bin/activate
-       switchtime nintendo-login       # prints a URL; paste the npf... link back
-       export NINTENDO_SESSION_TOKEN='the token it printed'
-       switchtime devices              # copy each id into config.toml
+       switchtime nintendo-login
+       switchtime devices              # put each id into config.toml
 
-  ${BOLD}2.${OFF} Add each child's IXL password to your environment, matching the
-     ixl_password_env names in config.toml:
-       export IXL_PASSWORD_OLIVER='...'
+  ${BOLD}2.${OFF} Open .env.local and fill in each child's IXL password, matching the
+     ixl_password_env names in config.toml. Edit the file — do not export
+     them, or the background service will not see them.
 
   ${BOLD}3.${OFF} Change parent_pin in config.toml from 1234.
 

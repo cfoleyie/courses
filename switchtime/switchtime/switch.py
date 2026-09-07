@@ -26,6 +26,17 @@ MIN_LIMIT = 0
 MAX_LIMIT = 360
 
 
+def looks_like_session_token(token: str) -> bool:
+    """Cheap shape check for a Nintendo session token.
+
+    They are JWTs: three dot-separated base64url segments, starting `eyJ`. This
+    only catches obvious rubbish — placeholder text, a truncated paste — so that
+    it fails with an explanation instead of Nintendo's opaque invalid_grant.
+    """
+    token = token.strip()
+    return token.startswith("eyJ") and token.count(".") == 2 and len(token) > 100
+
+
 class SwitchError(RuntimeError):
     """The console could not be read or written. Recoverable."""
 
@@ -64,8 +75,17 @@ class SwitchClient:
         token = self._config.nintendo.session_token
         if not token:
             raise SwitchError(
-                "No Nintendo session token. Run `switchtime nintendo-login` and put the "
-                "token in the environment variable named by nintendo.session_token_env."
+                "No Nintendo session token. Run `switchtime nintendo-login`, which saves "
+                "one to .env.local."
+            )
+        if not looks_like_session_token(token):
+            # Placeholder text from a copy-pasted instruction reaches Nintendo as
+            # an opaque invalid_grant, so reject it here where we can explain.
+            raise SwitchError(
+                f"NINTENDO_SESSION_TOKEN does not look like a token (it starts {token[:20]!r}). "
+                "It should be a long JWT beginning 'eyJ'. If you exported a placeholder in "
+                "this shell, run `unset NINTENDO_SESSION_TOKEN`; otherwise re-run "
+                "`switchtime nintendo-login`."
             )
         try:
             import aiohttp
@@ -214,4 +234,11 @@ class NullSwitchClient:
         return None
 
 
-__all__ = ["SwitchClient", "SwitchError", "SwitchState", "NullSwitchClient", "MAX_LIMIT"]
+__all__ = [
+    "SwitchClient",
+    "SwitchError",
+    "SwitchState",
+    "NullSwitchClient",
+    "MAX_LIMIT",
+    "looks_like_session_token",
+]

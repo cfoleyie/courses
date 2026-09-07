@@ -193,3 +193,27 @@ class TestShadowedSecrets:
         with caplog.at_level(logging.WARNING):
             load_env_file(env)
         assert caplog.text == ""
+
+
+class TestTokenShape:
+    def test_a_real_token_passes(self):
+        from switchtime.switch import looks_like_session_token
+
+        assert looks_like_session_token("eyJ" + "a" * 60 + "." + "b" * 60 + "." + "c" * 40)
+
+    def test_the_placeholder_that_caught_me_out_is_rejected(self):
+        from switchtime.switch import looks_like_session_token
+
+        assert not looks_like_session_token("the token it printed")
+
+    def test_empty_and_truncated_are_rejected(self):
+        from switchtime.switch import looks_like_session_token
+
+        assert not looks_like_session_token("")
+        assert not looks_like_session_token("eyJabc.def")
+
+    def test_whitespace_is_tolerated(self):
+        from switchtime.switch import looks_like_session_token
+
+        token = "eyJ" + "a" * 60 + "." + "b" * 60 + "." + "c" * 40
+        assert looks_like_session_token(f"  {token}\n")
