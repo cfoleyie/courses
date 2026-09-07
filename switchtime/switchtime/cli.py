@@ -8,6 +8,7 @@ import json
 import logging
 import sys
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
 from .config import Config, ConfigError, load_config
 from .db import Database
@@ -52,6 +53,22 @@ def cmd_serve(args: argparse.Namespace) -> int:
     return 0
 
 
+def oauth_state(url: str) -> str | None:
+    """Pull the OAuth `state` out of an authorize URL or the redirect it produces.
+
+    The authorize URL carries it in the query string and the npf... redirect
+    carries it in the fragment, so both are checked.
+    """
+    parsed = urlparse(url.strip())
+    for blob in (parsed.query, parsed.fragment):
+        if not blob:
+            continue
+        values = parse_qs(blob).get("state")
+        if values and values[0]:
+            return values[0]
+    return None
+
+
 def cmd_nintendo_login(args: argparse.Namespace) -> int:
     """Walk through Nintendo's OAuth flow once and print a reusable token."""
 
@@ -61,22 +78,62 @@ def cmd_nintendo_login(args: argparse.Namespace) -> int:
 
         async with aiohttp.ClientSession() as session:
             auth = Authenticator(client_session=session)
-            print("\n1. Open this URL in a browser signed in as the parent account:\n")
+            expected = oauth_state(auth.login_url)
+            print("\n1. Open this URL in a browser signed in as the parent account.")
+            print("   Close any Nintendo sign-in tab left from an earlier attempt first:")
+            print("   each run makes a new secret, and only this run's URL can finish it.\n")
             print(f"   {auth.login_url}\n")
             print("2. Complete the sign-in. The page will end on a 'Link account' button.")
             print("   Right-click it, copy the link address (it starts with npf...), and paste below.\n")
-            redirect = input("Pasted URL: ").strip()
-            if not redirect:
-                print("Nothing pasted — aborting.", file=sys.stderr)
-                return 1
-            try:
-                await auth.async_complete_login(redirect)
-            except Exception as exc:  # noqa: BLE001 - surfaced verbatim to the operator
-                print(f"Login failed: {type(exc).__name__}: {exc}", file=sys.stderr)
-                return 1
-            print("\nSession token (store it in your environment, it does not expire quickly):\n")
-            print(f"   export NINTENDO_SESSION_TOKEN='{auth.session_token}'\n")
-            return 0
+
+            for attempt in range(3):
+                redirect = input("Pasted URL: ").strip()
+                if not redirect:
+                    print("Nothing pasted — aborting.", file=sys.stderr)
+                    return 1
+                if not redirect.startswith("npf"):
+                    print(
+                        "\nThat does not look like the redirect — it should start with 'npf'.\n"
+                        "Right-click the 'Link account' button and copy the link address,\n"
+                        "rather than copying what is in the address bar.\n",
+                        file=sys.stderr,
+                    )
+                    continue
+                # Catch the common mistake before Nintendo answers with an opaque
+                # 400: a redirect belonging to some other sign-in attempt, whose
+                # secret this run does not hold.
+                supplied = oauth_state(redirect)
+                if expected and supplied and supplied != expected:
+                    print(
+                        "\nThat redirect is from a different sign-in attempt, so the secret\n"
+                        "it was issued against is not the one this run is holding.\n"
+                        "Open the URL printed above — that exact one — finish the sign-in\n"
+                        "there, and paste the redirect it gives you.\n",
+                        file=sys.stderr,
+                    )
+                    continue
+                try:
+                    await auth.async_complete_login(redirect)
+                except Exception as exc:  # noqa: BLE001 - surfaced to the operator
+                    detail = f"{type(exc).__name__}: {exc}"
+                    print(f"\nLogin failed: {detail}", file=sys.stderr)
+                    if "invalid" in detail.lower() and attempt < 2:
+                        print(
+                            "Those codes last about ten minutes. Re-open the URL above for\n"
+                            "a fresh one and paste again.\n",
+                            file=sys.stderr,
+                        )
+                        continue
+                    return 1
+                print("\nSession token. It is long-lived, so you only do this once:\n")
+                print(f"   {auth.session_token}\n")
+                print("Put it in .env.local next to config.toml, so the background service")
+                print("can read it — an exported shell variable will not reach a service:\n")
+                print(f"   NINTENDO_SESSION_TOKEN={auth.session_token}\n")
+                return 0
+
+            print("Too many attempts — run the command again.", file=sys.stderr)
+            return 1
 
     return asyncio.run(run())
 
