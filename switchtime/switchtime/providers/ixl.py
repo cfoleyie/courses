@@ -26,6 +26,9 @@ _LOG = logging.getLogger(__name__)
 #: and third-party telemetry that happen to be JSON.
 _ALLOWED_HOST_HINT = "ixl.com"
 _MAX_PAYLOAD_BYTES = 4_000_000
+#: Per-interaction cap. The page-level timeout is for navigation; a click or
+#: a fill that has not worked in a few seconds is stuck, not slow.
+_INTERACT_TIMEOUT_MS = 8_000
 
 
 class IXLProvider:
@@ -154,12 +157,15 @@ class IXLProvider:
 
             for index, url in enumerate(self._ixl.report_urls, start=2):
                 try:
-                    await page.goto(url, wait_until="networkidle")
+                    # Not networkidle: IXL holds connections open, so idle can
+                    # never arrive and the wait fails on a page that is fine.
+                    await page.goto(url, wait_until="domcontentloaded")
                 except Exception as exc:  # noqa: BLE001 - one bad report is survivable
                     result.note(f"{url} did not load: {type(exc).__name__}")
                     continue
-                # Reports lazy-load their tables after the shell paints.
-                await page.wait_for_timeout(2500)
+                # Reports lazy-load their tables after the shell paints, and the
+                # payloads we want arrive with them.
+                await page.wait_for_timeout(5000)
                 if dump_to is not None:
                     await self._capture(page, dump_to, kid.id, f"{index}-report")
                     result.note(f"{url} settled at {page.url}")
@@ -312,9 +318,12 @@ class IXLProvider:
         username box on the sign-in form behind the modal instead. These
         strategies anchor on the prompt text itself, in decreasing precision.
         """
+        # Order matters. The sign-in form sits behind this modal and its password
+        # box is still "visible" to a selector, so matching on input type first
+        # picks that up, and every click then waits forever on an overlay that
+        # swallows it. Anchor on the prompt text instead, and treat input type as
+        # a last resort.
         strategies = (
-            # An actual password field, if IXL ever makes it one.
-            "input[type='password']:visible",
             # The first input after the words "secret word", case-insensitive.
             "xpath=//*[contains(translate(normalize-space(text()),"
             "'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),"
@@ -322,6 +331,8 @@ class IXLProvider:
             # A labelled box, however it is worded.
             "input[placeholder*='secret' i]:visible",
             "input[aria-label*='secret' i]:visible",
+            # An actual password field, if IXL ever makes it one.
+            "input[type='password']:visible",
         )
         for selector in strategies:
             try:
@@ -366,6 +377,9 @@ class IXLProvider:
         if not kid.ixl_profile:
             return True
 
+        # Named so a failure says which step timed out. A bare "TimeoutError"
+        # against a multi-step interaction tells you nothing about where it was.
+        step = "finding the chooser"
         try:
             candidate = entry if entry is not None else await self._wait_for_chooser(
                 page, kid, timeout_ms=3000
@@ -377,7 +391,8 @@ class IXLProvider:
                 )
                 return True
 
-            await candidate.click()
+            step = f"clicking {kid.ixl_profile}"
+            await candidate.click(timeout=_INTERACT_TIMEOUT_MS)
             await page.wait_for_timeout(1500)
             if dump_to is not None:
                 await self._capture(page, dump_to, kid.id, "0b-profile-password")
@@ -385,38 +400,54 @@ class IXLProvider:
             # IXL calls this a "secret word" and renders it as a plain text box,
             # not a password field, so it has to be found by what it sits next
             # to rather than by input type.
+            step = "looking for the secret word box"
             prompt = await self._secret_word_input(page)
-            if prompt is not None:
-                secret = kid.ixl_profile_password or ""
-                if not secret:
-                    name = kid.ixl_profile_password_env_name or "ixl_profile_password_env"
-                    result.note(
-                        f"{kid.ixl_profile} is asked for a secret word but none is "
-                        f"configured. Run `switchtime set-secret {name}`."
-                    )
-                    return False
-                await prompt.click()
-                await prompt.fill(secret)
-                typed = await prompt.input_value()
+            if prompt is None:
+                result.note(f"Chose {kid.ixl_profile}; no secret word was asked for.")
+                return True
+
+            secret = kid.ixl_profile_password or ""
+            if not secret:
+                name = kid.ixl_profile_password_env_name or "ixl_profile_password_env"
                 result.note(
-                    f"secret word box holds {len(typed)} characters "
-                    f"(configured: {len(secret)})"
+                    f"{kid.ixl_profile} is asked for a secret word but none is "
+                    f"configured. Run `switchtime set-secret {name}`."
                 )
-                # The arrow beside the box carries no text, so Enter is the
-                # reliable way in; a named button is tried only as a fallback.
-                await prompt.press("Enter")
-                await page.wait_for_timeout(1500)
-                if await self._secret_word_input(page) is not None:
-                    button = page.locator(
-                        "button[type='submit']:visible, input[type='submit']:visible"
-                    ).first
-                    if await button.count():
-                        await button.click()
-                await page.wait_for_load_state("networkidle")
-            else:
-                result.note(f"Chose {kid.ixl_profile}; no password was asked for.")
+                return False
+
+            step = "typing the secret word"
+            await prompt.fill(secret, timeout=_INTERACT_TIMEOUT_MS)
+            typed = await prompt.input_value()
+            result.note(
+                f"secret word box holds {len(typed)} characters (configured: {len(secret)})"
+            )
+
+            # The arrow beside the box carries no text, so Enter is the reliable
+            # way in; a named button is tried only if the prompt is still there.
+            step = "submitting the secret word"
+            await prompt.press("Enter", timeout=_INTERACT_TIMEOUT_MS)
+            await page.wait_for_timeout(2000)
+            if await self._secret_word_input(page) is not None:
+                button = page.locator(
+                    "button[type='submit']:visible, input[type='submit']:visible"
+                ).first
+                if await button.count():
+                    await button.click(timeout=_INTERACT_TIMEOUT_MS)
+                    await page.wait_for_timeout(2000)
+
+            # Deliberately not wait_for_load_state("networkidle"): IXL keeps
+            # connections open, so idle may never arrive and the wait would time
+            # out on a page that is perfectly ready.
+            step = "waiting for the page to settle"
+            try:
+                await page.wait_for_load_state("domcontentloaded", timeout=_INTERACT_TIMEOUT_MS)
+            except Exception:  # noqa: BLE001 - already loaded is a fine outcome
+                pass
         except Exception as exc:  # noqa: BLE001 - reported, never fatal
-            result.note(f"Could not select the {kid.ixl_profile!r} profile: {type(exc).__name__}")
+            result.note(
+                f"Could not select the {kid.ixl_profile!r} profile — failed while "
+                f"{step}: {type(exc).__name__}"
+            )
             return False
 
         if dump_to is not None:
