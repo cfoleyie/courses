@@ -58,13 +58,20 @@ cp config.example.toml config.toml
 switchtime nintendo-login
 ```
 
-It prints a Nintendo sign-in URL. Sign in as the **parent** account, then on the
-final page right-click the *Link account* button, copy the link address (it
-starts with `npf`), and paste it back. You get a long-lived session token:
+It prints a Nintendo sign-in URL. Sign in as the **parent** account and you land
+on a *Link an account* page with a red **Select this account** button.
 
-```bash
-export NINTENDO_SESSION_TOKEN='...'
-```
+**Right-click that button and choose *Copy link address*** — a two-finger tap or
+Alt+click on a Chromebook — then paste it back. Left-clicking navigates to
+`npf...://auth`, which the browser cannot open, and takes the code with it. If
+the menu has no *Copy link address*, press Ctrl+Shift+J and run
+`document.querySelector('a[href^="npf"]').href`.
+
+Close any leftover Nintendo tab before you start: every run generates its own
+secret, and only the URL from the current run can complete the exchange.
+
+You get back a long-lived session token. Put it in `.env.local` rather than
+exporting it, so the background service can read it too.
 
 Then find each console's id and paste it into `config.toml`:
 

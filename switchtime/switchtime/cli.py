@@ -83,8 +83,14 @@ def cmd_nintendo_login(args: argparse.Namespace) -> int:
             print("   Close any Nintendo sign-in tab left from an earlier attempt first:")
             print("   each run makes a new secret, and only this run's URL can finish it.\n")
             print(f"   {auth.login_url}\n")
-            print("2. Complete the sign-in. The page will end on a 'Link account' button.")
-            print("   Right-click it, copy the link address (it starts with npf...), and paste below.\n")
+            print("2. Sign in. You land on a 'Link an account' page with a red")
+            print("   'Select this account' button.\n")
+            print("3. RIGHT-CLICK that button and choose 'Copy link address'.")
+            print("   On a Chromebook, right-click is a two-finger tap or Alt+click.")
+            print("   Do not left-click it: that navigates to npf...://auth, which the")
+            print("   browser cannot open, and the code goes with it.\n")
+            print("   No 'Copy link address' in the menu? Press Ctrl+Shift+J and run:")
+            print("     document.querySelector('a[href^=\"npf\"]').href\n")
 
             for attempt in range(3):
                 redirect = input("Pasted URL: ").strip()
@@ -94,8 +100,8 @@ def cmd_nintendo_login(args: argparse.Namespace) -> int:
                 if not redirect.startswith("npf"):
                     print(
                         "\nThat does not look like the redirect — it should start with 'npf'.\n"
-                        "Right-click the 'Link account' button and copy the link address,\n"
-                        "rather than copying what is in the address bar.\n",
+                        "Right-click the red 'Select this account' button and choose\n"
+                        "'Copy link address', rather than copying the address bar.\n",
                         file=sys.stderr,
                     )
                     continue
