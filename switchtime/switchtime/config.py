@@ -6,10 +6,13 @@ file itself can be committed or shared without leaking anything.
 
 from __future__ import annotations
 
+import logging
 import os
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
+
+_LOG = logging.getLogger(__name__)
 
 DEFAULT_CONFIG_PATH = Path(os.environ.get("SWITCHTIME_CONFIG", "config.toml"))
 
@@ -131,8 +134,20 @@ def load_env_file(path: Path) -> None:
         value = value.strip()
         if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
             value = value[1:-1]
-        if key and key not in os.environ:
+        if not key:
+            continue
+        if key not in os.environ:
             os.environ[key] = value
+        elif os.environ[key] != value:
+            # Precedence is deliberate, but a stale export shadowing a freshly
+            # saved secret looks exactly like the secret being wrong, so say so.
+            _LOG.warning(
+                "%s is set in your shell and differs from the value in %s. "
+                "The shell value is being used; run `unset %s` if it is stale.",
+                key,
+                path,
+                key,
+            )
 
 
 def _env(name: str | None, *, what: str) -> str | None:

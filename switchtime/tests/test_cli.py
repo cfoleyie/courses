@@ -164,3 +164,32 @@ class TestEnvFileLoading:
         )
         _store_token(tmp_path / ".env.local", "TOKEN-FROM-LOGIN")
         assert load_config(config_path).nintendo.session_token == "TOKEN-FROM-LOGIN"
+
+
+class TestShadowedSecrets:
+    def test_warns_when_the_shell_shadows_a_different_file_value(
+        self, tmp_path, monkeypatch, caplog
+    ):
+        import logging
+
+        from switchtime.config import load_env_file
+
+        monkeypatch.setenv("NINTENDO_SESSION_TOKEN", "stale-from-shell")
+        env = tmp_path / ".env.local"
+        env.write_text("NINTENDO_SESSION_TOKEN=fresh-from-login\n")
+        with caplog.at_level(logging.WARNING):
+            load_env_file(env)
+        assert "NINTENDO_SESSION_TOKEN" in caplog.text
+        assert "unset" in caplog.text
+
+    def test_silent_when_they_agree(self, tmp_path, monkeypatch, caplog):
+        import logging
+
+        from switchtime.config import load_env_file
+
+        monkeypatch.setenv("NINTENDO_SESSION_TOKEN", "same")
+        env = tmp_path / ".env.local"
+        env.write_text("NINTENDO_SESSION_TOKEN=same\n")
+        with caplog.at_level(logging.WARNING):
+            load_env_file(env)
+        assert caplog.text == ""
