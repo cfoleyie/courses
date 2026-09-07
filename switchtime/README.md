@@ -35,7 +35,17 @@ lands on the same value instead of stacking bonuses. Consequences worth knowing:
 ### 1. Install
 
 ```bash
-git clone <this repo> && cd switchtime
+git clone https://github.com/cfoleyie/courses && cd courses/switchtime
+bash tools/setup.sh
+```
+
+That creates the virtualenv, installs everything including the headless browser,
+copies `config.example.toml` to `config.toml`, runs the tests, and prints what is
+still missing. It is safe to re-run.
+
+Doing it by hand instead:
+
+```bash
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 playwright install chromium
@@ -182,6 +192,7 @@ only directory worth backing up.
 | `switchtime/switch.py` | Nintendo parental-controls client |
 | `switchtime/app.py` | HTTP API |
 | `switchtime/static/` | The web app |
+| `tools/setup.sh` | One-shot install on a fresh machine |
 | `tools/make_icons.py` | Regenerates the PWA icons |
 
 ```bash
