@@ -89,12 +89,26 @@ switchtime devices
 
 ### 3. Add IXL credentials
 
-IXL has no API, so the service signs in as each child and reads their Analytics
-pages the way you would. Add each password to `.env.local`, matching the
-`ixl_password_env` names in `config.toml`:
+IXL has no API, so the service signs in and reads the Analytics pages the way
+you would.
+
+**On a family subscription this is two steps**, and both need configuring: you
+sign in with one account, then each child taps their name and enters a short
+password of their own. `ixl_username` is the *family* account, not the child:
+
+```toml
+ixl_username = "family-account-username"
+ixl_password_env = "IXL_FAMILY_PASSWORD"
+ixl_profile = "Oliver"                   # the name he taps on the chooser
+ixl_profile_password_env = "IXL_PROFILE_OLIVER"
+```
+
+Leave the two `profile` lines out if your child signs in directly with their own
+username. Then put the passwords in `.env.local`:
 
 ```
-IXL_PASSWORD_OLIVER=...
+IXL_FAMILY_PASSWORD=...
+IXL_PROFILE_OLIVER=...
 ```
 
 Every command reads `.env.local` from beside `config.toml`, and so does the
@@ -293,5 +307,5 @@ limits. A Pi or any always-on box avoids both problems.
 | `tools/make_icons.py` | Regenerates the PWA icons |
 
 ```bash
-pytest        # 149 tests, no network or credentials needed
+pytest        # 152 tests, no network or credentials needed
 ```

@@ -205,7 +205,9 @@ class IXLProvider:
         """Reuse the stored session if it still works, otherwise sign in."""
         await page.goto(self._ixl.signin_url, wait_until="domcontentloaded")
         if "signin" not in page.url.lower():
-            return True  # stored cookies were still good
+            # Stored cookies were still good, but they may have expired back
+            # to the family level rather than this child.
+            return await self._select_profile(page, kid, result, dump_to)
 
         secret = kid.ixl_password or ""
         result.note(f"signing in as {kid.ixl_username!r} with a {len(secret)}-character password")
@@ -264,6 +266,9 @@ class IXLProvider:
             )
             return False
 
+        if "signin" not in page.url.lower():
+            return await self._select_profile(page, kid, result, dump_to)
+
         if "signin" in page.url.lower():
             # Still on the sign-in page after submitting. A wrong password is the
             # obvious reading, but a school account is at least as likely: those
@@ -280,6 +285,75 @@ class IXLProvider:
             else:
                 result.note("Check the username and password, then try again.")
             return False
+        return True
+
+    async def _select_profile(
+        self, page: Any, kid: KidConfig, result: ProviderResult, dump_to: Path | None
+    ) -> bool:
+        """Pick this child on a family account, and enter their own password.
+
+        A family subscription signs in once and then shows a list of children;
+        choosing one asks for a short password of their own. Without this the
+        session stays at the family level and the analytics belong to whoever
+        was last selected, which is worse than failing.
+        """
+        if not kid.ixl_profile:
+            return True
+
+        try:
+            # Match the name on something clickable rather than anywhere on the
+            # page: the child's name also appears in headings and greetings.
+            candidate = page.locator(
+                f"a:has-text('{kid.ixl_profile}'):visible, "
+                f"button:has-text('{kid.ixl_profile}'):visible, "
+                f"[role='button']:has-text('{kid.ixl_profile}'):visible"
+            ).first
+            if not await candidate.count():
+                result.note(
+                    f"No profile chooser offering {kid.ixl_profile!r} — assuming the "
+                    "session is already on the right child."
+                )
+                return True
+
+            await candidate.click()
+            await page.wait_for_timeout(1500)
+            if dump_to is not None:
+                await self._capture(page, dump_to, kid.id, "0b-profile-password")
+
+            # The per-child password prompt appears after the name is chosen.
+            prompt = page.locator("input[type='password']:visible").first
+            if await prompt.count():
+                secret = kid.ixl_profile_password or ""
+                if not secret:
+                    result.note(
+                        f"{kid.ixl_profile} asks for their own password but none is "
+                        "configured. Set ixl_profile_password_env for this kid."
+                    )
+                    return False
+                await prompt.click()
+                await prompt.fill(secret)
+                typed = await prompt.input_value()
+                result.note(
+                    f"profile prompt holds a {len(typed)}-character password "
+                    f"(configured: {len(secret)})"
+                )
+                button = page.locator(
+                    "button[type='submit']:visible, input[type='submit']:visible, "
+                    "button:has-text('Sign in'):visible, button:has-text('Go'):visible"
+                ).first
+                if await button.count():
+                    await button.click()
+                else:
+                    await prompt.press("Enter")
+                await page.wait_for_load_state("networkidle")
+            else:
+                result.note(f"Chose {kid.ixl_profile}; no password was asked for.")
+        except Exception as exc:  # noqa: BLE001 - reported, never fatal
+            result.note(f"Could not select the {kid.ixl_profile!r} profile: {type(exc).__name__}")
+            return False
+
+        if dump_to is not None:
+            await self._capture(page, dump_to, kid.id, "0c-after-profile")
         return True
 
     @staticmethod

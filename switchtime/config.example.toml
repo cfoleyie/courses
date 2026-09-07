@@ -64,8 +64,14 @@ max_daily_minutes = 360
 id = "oliver"
 name = "Oliver"
 color = "#3e6fa6"
-ixl_username = "oliver.example"
-ixl_password_env = "IXL_PASSWORD_OLIVER"
+# On a family subscription this is the account everyone signs in with, not the
+# child. The child is then picked from a list, with a short password of their
+# own — set ixl_profile and ixl_profile_password_env for that second step.
+# On an account where the child signs in directly, leave the profile lines out.
+ixl_username = "family-account-username"
+ixl_password_env = "IXL_FAMILY_PASSWORD"
+ixl_profile = "Oliver"                   # the name he taps on the chooser
+ixl_profile_password_env = "IXL_PROFILE_OLIVER"
 switch_device_id = "REPLACE_ME"          # from: switchtime devices
 # minutes_per_lesson = 30                # optional per-kid override
 

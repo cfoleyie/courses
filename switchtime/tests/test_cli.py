@@ -313,3 +313,68 @@ class TestIXLBaseUrl:
 
         config = load_config(self._write(tmp_path, '[ixl]\nbase_url = "https://ie.ixl.com"'))
         assert not any("usage-details" in url for url in config.ixl.report_urls)
+
+
+class TestFamilyProfileConfig:
+    def _write(self, tmp_path, kid_body: str):
+        path = tmp_path / "config.toml"
+        path.write_text(
+            f'[server]\ndatabase = "{tmp_path}/p.db"\n[[kids]]\n{kid_body}\n'
+        )
+        return path
+
+    def test_profile_and_its_password_are_loaded(self, tmp_path, monkeypatch):
+        from switchtime.config import load_config
+
+        monkeypatch.setenv("IXL_FAMILY_PASSWORD", "family-secret")
+        monkeypatch.setenv("IXL_PROFILE_OLIVER", "Foley")
+        config = load_config(
+            self._write(
+                tmp_path,
+                'id = "oliver"\nname = "Oliver"\n'
+                'ixl_username = "Franpod"\n'
+                'ixl_password_env = "IXL_FAMILY_PASSWORD"\n'
+                'ixl_profile = "Oliver"\n'
+                'ixl_profile_password_env = "IXL_PROFILE_OLIVER"\n',
+            )
+        )
+        kid = config.kid("oliver")
+        assert kid.ixl_username == "Franpod"
+        assert kid.ixl_password == "family-secret"
+        assert kid.ixl_profile == "Oliver"
+        assert kid.ixl_profile_password == "Foley"
+
+    def test_a_direct_account_needs_no_profile(self, tmp_path, monkeypatch):
+        from switchtime.config import load_config
+
+        monkeypatch.setenv("IXL_PASSWORD_OLIVER", "x")
+        config = load_config(
+            self._write(
+                tmp_path,
+                'id = "oliver"\nname = "Oliver"\n'
+                'ixl_username = "oliver"\nixl_password_env = "IXL_PASSWORD_OLIVER"\n',
+            )
+        )
+        kid = config.kid("oliver")
+        assert kid.ixl_profile is None
+        assert kid.ixl_ready, "a direct account is still usable"
+
+    def test_readiness_ignores_the_profile_password(self, tmp_path, monkeypatch):
+        """A missing profile password is reported at sign-in, not treated as
+        'no credentials at all' — the run should get far enough to say so."""
+        from switchtime.config import load_config
+
+        monkeypatch.setenv("IXL_FAMILY_PASSWORD", "family-secret")
+        monkeypatch.delenv("IXL_PROFILE_OLIVER", raising=False)
+        config = load_config(
+            self._write(
+                tmp_path,
+                'id = "oliver"\nname = "Oliver"\n'
+                'ixl_username = "Franpod"\n'
+                'ixl_password_env = "IXL_FAMILY_PASSWORD"\n'
+                'ixl_profile = "Oliver"\n'
+                'ixl_profile_password_env = "IXL_PROFILE_OLIVER"\n',
+            )
+        )
+        assert config.kid("oliver").ixl_ready
+        assert config.kid("oliver").ixl_profile_password is None

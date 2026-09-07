@@ -28,6 +28,11 @@ class KidConfig:
     color: str = "#3e6fa6"
     ixl_username: str | None = None
     ixl_password: str | None = None
+    # A family IXL account signs in once, then each child picks their name from
+    # a list and enters a short password of their own. Both steps are needed to
+    # reach a particular child's analytics.
+    ixl_profile: str | None = None
+    ixl_profile_password: str | None = None
     switch_device_id: str | None = None
     nintendo_session_token: str | None = None
     minutes_per_lesson: int | None = None
@@ -261,6 +266,10 @@ def load_config(path: str | Path | None = None) -> Config:
                 color=entry.get("color", KidConfig.color),
                 ixl_username=entry.get("ixl_username"),
                 ixl_password=_env(entry.get("ixl_password_env"), what="ixl password"),
+                ixl_profile=entry.get("ixl_profile"),
+                ixl_profile_password=_env(
+                    entry.get("ixl_profile_password_env"), what="ixl profile password"
+                ),
                 switch_device_id=entry.get("switch_device_id"),
                 nintendo_session_token=_env(
                     entry.get("nintendo_session_token_env"), what="nintendo token"
