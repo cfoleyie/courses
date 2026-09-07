@@ -98,3 +98,69 @@ class TestEnvLocalPath:
         from switchtime.cli import _env_local_path
 
         assert _env_local_path(None) == Path.cwd() / ".env.local"
+
+
+class TestEnvFileLoading:
+    def test_values_reach_the_environment(self, tmp_path, monkeypatch):
+        from switchtime.config import load_env_file
+
+        monkeypatch.delenv("NINTENDO_SESSION_TOKEN", raising=False)
+        env = tmp_path / ".env.local"
+        env.write_text("NINTENDO_SESSION_TOKEN=abc123\n")
+        load_env_file(env)
+        import os
+
+        assert os.environ["NINTENDO_SESSION_TOKEN"] == "abc123"
+
+    def test_a_real_environment_variable_wins(self, tmp_path, monkeypatch):
+        from switchtime.config import load_env_file
+
+        monkeypatch.setenv("NINTENDO_SESSION_TOKEN", "from-shell")
+        env = tmp_path / ".env.local"
+        env.write_text("NINTENDO_SESSION_TOKEN=from-file\n")
+        load_env_file(env)
+        import os
+
+        assert os.environ["NINTENDO_SESSION_TOKEN"] == "from-shell"
+
+    def test_comments_and_blank_lines_are_skipped(self, tmp_path, monkeypatch):
+        from switchtime.config import load_env_file
+
+        monkeypatch.delenv("IXL_PASSWORD_OLIVER", raising=False)
+        env = tmp_path / ".env.local"
+        env.write_text("# a comment\n\nIXL_PASSWORD_OLIVER=hunter2\n")
+        load_env_file(env)
+        import os
+
+        assert os.environ["IXL_PASSWORD_OLIVER"] == "hunter2"
+
+    def test_quotes_are_stripped(self, tmp_path, monkeypatch):
+        from switchtime.config import load_env_file
+
+        monkeypatch.delenv("IXL_PASSWORD_ALICE", raising=False)
+        env = tmp_path / ".env.local"
+        env.write_text("IXL_PASSWORD_ALICE='pa ss'\n")
+        load_env_file(env)
+        import os
+
+        assert os.environ["IXL_PASSWORD_ALICE"] == "pa ss"
+
+    def test_a_missing_file_is_not_an_error(self, tmp_path):
+        from switchtime.config import load_env_file
+
+        load_env_file(tmp_path / "nope.local")
+
+    def test_login_then_devices_sees_the_token(self, tmp_path, monkeypatch):
+        """The exact sequence that would otherwise fail: save, then read back."""
+        from switchtime.cli import _store_token
+        from switchtime.config import load_config
+
+        monkeypatch.delenv("NINTENDO_SESSION_TOKEN", raising=False)
+        config_path = tmp_path / "config.toml"
+        config_path.write_text(
+            '[server]\ndatabase = "d.db"\n'
+            '[nintendo]\nsession_token_env = "NINTENDO_SESSION_TOKEN"\n'
+            '[[kids]]\nid = "oliver"\nname = "Oliver"\n'
+        )
+        _store_token(tmp_path / ".env.local", "TOKEN-FROM-LOGIN")
+        assert load_config(config_path).nintendo.session_token == "TOKEN-FROM-LOGIN"

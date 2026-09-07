@@ -108,6 +108,33 @@ class Config:
         return kid.minutes_per_lesson or self.rules.minutes_per_lesson
 
 
+def load_env_file(path: Path) -> None:
+    """Fold KEY=VALUE lines from `path` into the environment.
+
+    The background service gets these through systemd's EnvironmentFile, but a
+    command run by hand would otherwise see nothing — so `switchtime devices`
+    would fail right after `nintendo-login` had just saved a token. A real
+    environment variable still wins, so an explicit export can override the file.
+    """
+    if not path.exists():
+        return
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return
+    for raw in lines:
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip()
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+            value = value[1:-1]
+        if key and key not in os.environ:
+            os.environ[key] = value
+
+
 def _env(name: str | None, *, what: str) -> str | None:
     """Read a secret out of the environment, tolerating an unset variable."""
     if not name:
@@ -133,6 +160,9 @@ def load_config(path: str | Path | None = None) -> Config:
         raise ConfigError(
             f"No config at {path}. Copy config.example.toml to {path} and edit it."
         )
+    # Before any secret is looked up, so a hand-run command sees what the
+    # service sees.
+    load_env_file(path.parent / ".env.local")
     raw = tomllib.loads(path.read_text(encoding="utf-8"))
 
     server_raw = _subtable(raw, "server")

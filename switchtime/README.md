@@ -90,12 +90,16 @@ switchtime devices
 ### 3. Add IXL credentials
 
 IXL has no API, so the service signs in as each child and reads their Analytics
-pages the way you would. Put each password in the environment variable named by
-`ixl_password_env`:
+pages the way you would. Add each password to `.env.local`, matching the
+`ixl_password_env` names in `config.toml`:
 
-```bash
-export IXL_PASSWORD_OLIVER='...'
 ```
+IXL_PASSWORD_OLIVER=...
+```
+
+Every command reads `.env.local` from beside `config.toml`, and so does the
+background service, so the secrets are configured once. A real environment
+variable still takes precedence if you would rather export one.
 
 ### 4. Check the wiring, then run
 
@@ -246,5 +250,5 @@ limits. A Pi or any always-on box avoids both problems.
 | `tools/make_icons.py` | Regenerates the PWA icons |
 
 ```bash
-pytest        # 126 tests, no network or credentials needed
+pytest        # 132 tests, no network or credentials needed
 ```
