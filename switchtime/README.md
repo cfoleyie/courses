@@ -174,12 +174,46 @@ parent for time** and you approve from your phone.
 ## Running it as a service
 
 ```bash
+bash tools/install-service.sh
+```
+
+Installs a systemd user service where one exists, and falls back to a `@reboot`
+cron entry where it does not. Either way it creates `.env.local` (mode 600,
+gitignored) for the Nintendo token and the IXL passwords — a background service
+inherits nothing from your shell, so `export` is not enough; the secrets have to
+live in that file.
+
+```bash
+systemctl --user status switchtime      # is it running
+systemctl --user restart switchtime     # after editing config.toml or .env.local
+journalctl --user -u switchtime -f      # follow the logs
+```
+
+Docker instead:
+
+```bash
 cp .env.example .env      # fill in the tokens
 docker compose up -d
 ```
 
-Or run `switchtime serve` under systemd. Data lives in `data/`, which is the
-only directory worth backing up.
+Data lives in `data/`, which is the only directory worth backing up.
+
+### Hosting it on a Chromebook
+
+Workable, with two caveats worth knowing before you rely on it.
+
+Enable **Settings → Advanced → Developers → Linux development environment**,
+then run `tools/setup.sh` and `tools/install-service.sh` in the Terminal app.
+
+**It stops when the Chromebook sleeps.** The Linux container is suspended with
+the rest of the device, so polling halts when the lid closes. Set
+**Settings → Device → Power → While charging → Keep display on** and leave it
+plugged in. Nothing is lost when it does sleep: the console keeps its own count,
+and the next sync after waking charges whatever was played meanwhile.
+
+**Whoever holds the Chromebook can stop the service.** If this is the same
+machine a child uses, they can quit the container that enforces their own
+limits. A Pi or any always-on box avoids both problems.
 
 ## Layout
 
@@ -193,6 +227,7 @@ only directory worth backing up.
 | `switchtime/app.py` | HTTP API |
 | `switchtime/static/` | The web app |
 | `tools/setup.sh` | One-shot install on a fresh machine |
+| `tools/install-service.sh` | Runs it in the background, surviving reboots |
 | `tools/make_icons.py` | Regenerates the PWA icons |
 
 ```bash
