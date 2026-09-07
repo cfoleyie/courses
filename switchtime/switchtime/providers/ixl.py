@@ -144,7 +144,7 @@ class IXLProvider:
         page.on("response", capture)
 
         try:
-            signed_in = await self._ensure_signed_in(page, kid, result)
+            signed_in = await self._ensure_signed_in(page, kid, result, dump_to)
             if dump_to is not None:
                 await self._capture(page, dump_to, kid.id, "1-after-signin")
                 result.note(f"after sign-in, the browser was at {page.url}")
@@ -199,26 +199,62 @@ class IXLProvider:
         finally:
             await context.close()
 
-    async def _ensure_signed_in(self, page: Any, kid: KidConfig, result: ProviderResult) -> bool:
+    async def _ensure_signed_in(
+        self, page: Any, kid: KidConfig, result: ProviderResult, dump_to: Path | None = None
+    ) -> bool:
         """Reuse the stored session if it still works, otherwise sign in."""
         await page.goto(self._ixl.signin_url, wait_until="domcontentloaded")
         if "signin" not in page.url.lower():
             return True  # stored cookies were still good
 
+        secret = kid.ixl_password or ""
+        result.note(f"signing in as {kid.ixl_username!r} with a {len(secret)}-character password")
+
         try:
             # Find the fields by role rather than by id. IXL's markup is not a
             # contract, but "the password box, and the text box next to it" is
-            # stable in a way that a generated element id is not.
-            password = page.locator("input[type='password']").first
-            await password.wait_for(state="visible", timeout=self._ixl.nav_timeout_ms)
+            # stable in a way that a generated element id is not. Both must be
+            # visible: the page carries hidden inputs that fill() would happily
+            # accept and the form would then ignore.
             username = page.locator(
                 "input[type='text']:visible, input[type='email']:visible, "
                 "input[name*='user' i]:visible"
             ).first
+            password = page.locator("input[type='password']:visible").first
+            await password.wait_for(state="visible", timeout=self._ixl.nav_timeout_ms)
+
+            await username.click()
             await username.fill(kid.ixl_username or "")
-            await password.fill(kid.ixl_password or "")
-            # Enter submits every sign-in form; a submit button is not always one.
-            await password.press("Enter")
+            await password.click()
+            await password.fill(secret)
+
+            # Confirm both fields actually hold what we typed. A value that did
+            # not stick is the difference between "IXL refused us" and "we
+            # submitted an empty box", and those need opposite fixes.
+            typed_user = await username.input_value()
+            typed_pass = await password.input_value()
+            result.note(
+                f"form now holds username={typed_user!r} and a "
+                f"{len(typed_pass)}-character password"
+            )
+            if len(typed_pass) != len(secret):
+                result.note(
+                    "The password did not stick in the form. That is a page-structure "
+                    "problem, not a wrong password."
+                )
+            if dump_to is not None:
+                await self._capture(page, dump_to, kid.id, "0-before-submit")
+
+            # Prefer the real button: some forms bind validation to the click
+            # rather than to the form's submit event.
+            button = page.locator(
+                "button[type='submit']:visible, input[type='submit']:visible, "
+                "button:has-text('Sign in'):visible"
+            ).first
+            if await button.count():
+                await button.click()
+            else:
+                await password.press("Enter")
             await page.wait_for_load_state("networkidle")
         except Exception as exc:  # noqa: BLE001
             result.note(
