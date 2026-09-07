@@ -70,8 +70,16 @@ the menu has no *Copy link address*, press Ctrl+Shift+J and run
 Close any leftover Nintendo tab before you start: every run generates its own
 secret, and only the URL from the current run can complete the exchange.
 
-You get back a long-lived session token. Put it in `.env.local` rather than
-exporting it, so the background service can read it too.
+The token is written straight into `.env.local` (mode 600) rather than printed.
+It is valid for **years** — treat it like a password, and do not paste it into a
+chat, an issue or a screenshot. `--print-token` puts it on screen instead, for
+Docker or a password manager.
+
+If one does leak: change your Nintendo Account password and use
+*Sign-in and security settings → Sign-in history → Sign out from all devices*,
+then run this command again for a fresh one. The scopes are limited to parental
+controls, so a leaked token cannot buy anything or take over the account, but it
+can read play summaries and change your children's limits.
 
 Then find each console's id and paste it into `config.toml`:
 
@@ -238,5 +246,5 @@ limits. A Pi or any always-on box avoids both problems.
 | `tools/make_icons.py` | Regenerates the PWA icons |
 
 ```bash
-pytest        # 119 tests, no network or credentials needed
+pytest        # 126 tests, no network or credentials needed
 ```

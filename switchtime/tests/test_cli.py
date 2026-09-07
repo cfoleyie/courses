@@ -40,3 +40,61 @@ class TestOAuthState:
 
     def test_junk_input_does_not_raise(self):
         assert oauth_state("not a url at all") is None
+
+
+class TestTokenStorage:
+    def test_creates_env_local_with_the_token(self, tmp_path):
+        from switchtime.cli import _store_token
+
+        env = tmp_path / ".env.local"
+        _store_token(env, "TOKEN123")
+        assert "NINTENDO_SESSION_TOKEN=TOKEN123" in env.read_text()
+
+    def test_file_is_not_readable_by_others(self, tmp_path):
+        from switchtime.cli import _store_token
+
+        env = tmp_path / ".env.local"
+        _store_token(env, "TOKEN123")
+        assert oct(env.stat().st_mode)[-3:] == "600"
+
+    def test_replaces_an_existing_token_rather_than_appending(self, tmp_path):
+        from switchtime.cli import _store_token
+
+        env = tmp_path / ".env.local"
+        env.write_text("NINTENDO_SESSION_TOKEN=OLD\nIXL_PASSWORD_OLIVER=hunter2\n")
+        _store_token(env, "NEW")
+        body = env.read_text()
+        assert "OLD" not in body
+        assert body.count("NINTENDO_SESSION_TOKEN=") == 1
+
+    def test_keeps_the_other_secrets(self, tmp_path):
+        from switchtime.cli import _store_token
+
+        env = tmp_path / ".env.local"
+        env.write_text("NINTENDO_SESSION_TOKEN=OLD\nIXL_PASSWORD_OLIVER=hunter2\n")
+        _store_token(env, "NEW")
+        assert "IXL_PASSWORD_OLIVER=hunter2" in env.read_text()
+
+    def test_replacing_a_blank_placeholder(self, tmp_path):
+        from switchtime.cli import _store_token
+
+        env = tmp_path / ".env.local"
+        env.write_text("NINTENDO_SESSION_TOKEN=\nIXL_PASSWORD_ALICE=x\n")
+        _store_token(env, "NEW")
+        assert "NINTENDO_SESSION_TOKEN=NEW" in env.read_text()
+
+
+class TestEnvLocalPath:
+    def test_sits_beside_the_config_file(self, tmp_path):
+        from switchtime.cli import _env_local_path
+
+        config = tmp_path / "config.toml"
+        config.touch()
+        assert _env_local_path(str(config)) == tmp_path / ".env.local"
+
+    def test_defaults_to_the_working_directory(self):
+        from pathlib import Path
+
+        from switchtime.cli import _env_local_path
+
+        assert _env_local_path(None) == Path.cwd() / ".env.local"

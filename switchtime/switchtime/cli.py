@@ -69,8 +69,39 @@ def oauth_state(url: str) -> str | None:
     return None
 
 
+def _env_local_path(config_path: str | None) -> Path:
+    """Where secrets live: beside config.toml, so both travel together."""
+    base = Path(config_path).resolve().parent if config_path else Path.cwd()
+    return base / ".env.local"
+
+
+def _store_token(env_path: Path, token: str) -> None:
+    """Write NINTENDO_SESSION_TOKEN into .env.local, replacing any existing line.
+
+    Written before the chmod on a fresh file would be a small window with the
+    token world-readable, so the file is created restricted and then filled.
+    """
+    line = f"NINTENDO_SESSION_TOKEN={token}"
+    if env_path.exists():
+        kept = [
+            existing
+            for existing in env_path.read_text(encoding="utf-8").splitlines()
+            if not existing.startswith("NINTENDO_SESSION_TOKEN=")
+        ]
+        body = "\n".join([*kept, line]).strip() + "\n"
+    else:
+        env_path.touch(mode=0o600)
+        body = (
+            "# Read by the background service. Keep this file private.\n"
+            f"{line}\n"
+        )
+    env_path.chmod(0o600)
+    env_path.write_text(body, encoding="utf-8")
+    env_path.chmod(0o600)
+
+
 def cmd_nintendo_login(args: argparse.Namespace) -> int:
-    """Walk through Nintendo's OAuth flow once and print a reusable token."""
+    """Walk through Nintendo's OAuth flow once and save a reusable token."""
 
     async def run() -> int:
         import aiohttp
@@ -131,11 +162,24 @@ def cmd_nintendo_login(args: argparse.Namespace) -> int:
                         )
                         continue
                     return 1
-                print("\nSession token. It is long-lived, so you only do this once:\n")
-                print(f"   {auth.session_token}\n")
-                print("Put it in .env.local next to config.toml, so the background service")
-                print("can read it — an exported shell variable will not reach a service:\n")
-                print(f"   NINTENDO_SESSION_TOKEN={auth.session_token}\n")
+                token = auth.session_token or ""
+                if args.print_token:
+                    print("\nSession token:\n")
+                    print(f"   {token}\n")
+                    print("Treat it like a password — it is valid for years.\n")
+                    return 0
+                env_path = _env_local_path(args.config)
+                try:
+                    _store_token(env_path, token)
+                except OSError as exc:
+                    print(f"\nCould not write {env_path}: {exc}", file=sys.stderr)
+                    print("Re-run with --print-token to get it on screen instead.", file=sys.stderr)
+                    return 1
+                # Deliberately not printed in full: it is valid for years, and a
+                # token on screen ends up pasted into a chat or a screenshot.
+                print(f"\nSaved to {env_path} (mode 600).")
+                print(f"Token starts {token[:12]}… and is valid for years — treat it as a password.")
+                print("\nNext: switchtime devices\n")
                 return 0
 
             print("Too many attempts — run the command again.", file=sys.stderr)
@@ -289,6 +333,11 @@ def build_parser() -> argparse.ArgumentParser:
     serve.set_defaults(func=cmd_serve)
 
     login = sub.add_parser("nintendo-login", help="get a Nintendo session token")
+    login.add_argument(
+        "--print-token",
+        action="store_true",
+        help="print the token instead of saving it to .env.local (for Docker or a password manager)",
+    )
     login.set_defaults(func=cmd_nintendo_login)
 
     devices = sub.add_parser("devices", help="list Switch consoles and their ids")
