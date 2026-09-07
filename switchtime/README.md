@@ -307,5 +307,5 @@ limits. A Pi or any always-on box avoids both problems.
 | `tools/make_icons.py` | Regenerates the PWA icons |
 
 ```bash
-pytest        # 152 tests, no network or credentials needed
+pytest        # 156 tests, no network or credentials needed
 ```

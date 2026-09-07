@@ -378,3 +378,64 @@ class TestFamilyProfileConfig:
         )
         assert config.kid("oliver").ixl_ready
         assert config.kid("oliver").ixl_profile_password is None
+
+
+class TestMissingSecrets:
+    def _config(self, tmp_path, kid_body: str):
+        from switchtime.config import load_config
+
+        path = tmp_path / "config.toml"
+        path.write_text(f'[server]\ndatabase = "{tmp_path}/m.db"\n[[kids]]\n{kid_body}\n')
+        return load_config(path)
+
+    def test_names_the_unset_family_password_variable(self, tmp_path, monkeypatch):
+        from switchtime.cli import missing_secrets
+
+        monkeypatch.delenv("IXL_FAMILY_PASSWORD", raising=False)
+        config = self._config(
+            tmp_path,
+            'id = "oliver"\nname = "Oliver"\n'
+            'ixl_username = "Franpod"\nixl_password_env = "IXL_FAMILY_PASSWORD"\n',
+        )
+        problems = missing_secrets(config)
+        assert any("IXL_FAMILY_PASSWORD" in p for p in problems)
+
+    def test_names_the_unset_profile_password_variable(self, tmp_path, monkeypatch):
+        from switchtime.cli import missing_secrets
+
+        monkeypatch.setenv("IXL_FAMILY_PASSWORD", "set")
+        monkeypatch.delenv("IXL_PROFILE_OLIVER", raising=False)
+        config = self._config(
+            tmp_path,
+            'id = "oliver"\nname = "Oliver"\n'
+            'ixl_username = "Franpod"\nixl_password_env = "IXL_FAMILY_PASSWORD"\n'
+            'ixl_profile = "Oliver"\nixl_profile_password_env = "IXL_PROFILE_OLIVER"\n',
+        )
+        assert any("IXL_PROFILE_OLIVER" in p for p in missing_secrets(config))
+
+    def test_silent_when_everything_is_set(self, tmp_path, monkeypatch):
+        from switchtime.cli import missing_secrets
+
+        monkeypatch.setenv("IXL_FAMILY_PASSWORD", "set")
+        monkeypatch.setenv("IXL_PROFILE_OLIVER", "Foley")
+        config = self._config(
+            tmp_path,
+            'id = "oliver"\nname = "Oliver"\n'
+            'ixl_username = "Franpod"\nixl_password_env = "IXL_FAMILY_PASSWORD"\n'
+            'ixl_profile = "Oliver"\nixl_profile_password_env = "IXL_PROFILE_OLIVER"\n',
+        )
+        assert missing_secrets(config) == []
+
+    def test_nothing_reported_when_ixl_is_switched_off(self, tmp_path, monkeypatch):
+        from switchtime.cli import missing_secrets
+
+        monkeypatch.delenv("IXL_FAMILY_PASSWORD", raising=False)
+        from switchtime.config import load_config
+
+        path = tmp_path / "config.toml"
+        path.write_text(
+            f'[server]\ndatabase = "{tmp_path}/m.db"\n[ixl]\nenabled = false\n'
+            '[[kids]]\nid = "oliver"\nname = "Oliver"\n'
+            'ixl_username = "Franpod"\nixl_password_env = "IXL_FAMILY_PASSWORD"\n'
+        )
+        assert missing_secrets(load_config(path)) == []

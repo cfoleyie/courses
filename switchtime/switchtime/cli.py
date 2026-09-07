@@ -340,26 +340,49 @@ def cmd_check_config(args: argparse.Namespace) -> int:
     except ConfigError as exc:
         print(f"Config problem: {exc}", file=sys.stderr)
         return 1
-    print(json.dumps(
-        {
-            "kids": [
-                {
-                    "id": k.id,
-                    "name": k.name,
-                    "ixl_ready": k.ixl_ready,
-                    "switch_ready": k.switch_ready,
-                }
-                for k in config.kids
-            ],
-            "ixl_enabled": config.ixl.enabled,
-            "nintendo_enabled": config.nintendo.enabled,
-            "nintendo_token_present": bool(config.nintendo.session_token),
-            "dry_run": config.nintendo.dry_run,
-            "minutes_per_lesson": config.rules.minutes_per_lesson,
-        },
-        indent=2,
-    ))
+    print(f"IXL          {'on' if config.ixl.enabled else 'off'}  ({config.ixl.base_url})")
+    print(f"Nintendo     {'on' if config.nintendo.enabled else 'off'}"
+          f"{'  DRY RUN — nothing reaches a console' if config.nintendo.dry_run else ''}")
+    print(f"Minutes/lesson {config.rules.minutes_per_lesson}\n")
+
+    problems = missing_secrets(config)
+    for kid in config.kids:
+        marks = []
+        marks.append("IXL ok" if kid.ixl_ready else "IXL not ready")
+        marks.append("console ok" if kid.switch_ready else "no console")
+        print(f"  {kid.name:<10} {' · '.join(marks)}")
+    print()
+
+    if not config.nintendo.session_token and config.nintendo.enabled:
+        problems.append("No Nintendo session token — run `switchtime nintendo-login`.")
+    if problems:
+        print("Needs attention:")
+        for line in problems:
+            print(f"  - {line}")
+        return 1
+    print("Everything needed is configured.")
     return 0
+
+
+def missing_secrets(config: Config) -> list[str]:
+    """Name the environment variables that are declared but empty.
+
+    An unset password is otherwise indistinguishable from a wrong one once a
+    browser is involved, so it is worth catching before anything launches.
+    """
+    problems: list[str] = []
+    for kid in config.kids:
+        if not config.ixl.enabled:
+            break
+        if kid.ixl_username and not kid.ixl_password:
+            name = kid.ixl_password_env_name or "ixl_password_env"
+            problems.append(f"{kid.name}: {name} is empty or unset in .env.local.")
+        if kid.ixl_profile and not kid.ixl_profile_password:
+            name = kid.ixl_profile_password_env_name or "ixl_profile_password_env"
+            problems.append(f"{kid.name}: {name} is empty or unset in .env.local.")
+        if kid.ixl_password and not kid.ixl_username:
+            problems.append(f"{kid.name}: a password is set but ixl_username is missing.")
+    return problems
 
 
 # ----- wiring -----------------------------------------------------------

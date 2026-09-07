@@ -210,6 +210,17 @@ class IXLProvider:
             return await self._select_profile(page, kid, result, dump_to)
 
         secret = kid.ixl_password or ""
+        if not secret:
+            # Submitting an empty box only produces IXL's own validation error,
+            # which reads like a rejected password rather than a missing one.
+            name = kid.ixl_password_env_name or "the ixl_password_env variable"
+            result.note(
+                f"No IXL password for {kid.name}: {name} is empty or unset in .env.local. "
+                "Nothing else here can work until that is set."
+            )
+            if dump_to is not None:
+                await self._capture(page, dump_to, kid.id, "0-no-password")
+            return False
         result.note(f"signing in as {kid.ixl_username!r} with a {len(secret)}-character password")
 
         try:
@@ -360,9 +371,16 @@ class IXLProvider:
     async def _single_sign_on_hints(page: Any) -> list[str]:
         """Names of any third-party sign-in options offered on the page."""
         try:
-            text = (await page.content()).lower()
+            # Only the text of things you could click. Reading page source instead
+            # matches the analytics script every site loads, which made this
+            # report Google sign-in on every page it ever saw.
+            labels = await page.eval_on_selector_all(
+                "a, button, [role='button']",
+                "els => els.map(e => (e.innerText || '').trim()).filter(Boolean)",
+            )
         except Exception:  # noqa: BLE001 - a diagnostic must not raise
             return []
+        joined = " ".join(labels).lower()
         return [
             name
             for name, needle in (
@@ -371,7 +389,7 @@ class IXLProvider:
                 ("Microsoft", "microsoft"),
                 ("ClassLink", "classlink"),
             )
-            if needle in text
+            if needle in joined
         ]
 
     async def _fallback_from_dom(self, page: Any, today: str, result: ProviderResult) -> list[Lesson]:
@@ -420,6 +438,10 @@ class IXLProvider:
         """Run a fetch and keep every payload, so selectors can be tuned by eye."""
         kid = self._config.kid(kid_id)
         out_dir.mkdir(parents=True, exist_ok=True)
+        if not kid.ixl_username:
+            return ProviderResult(
+                ok=False, diagnostics=[f"No ixl_username configured for {kid.name}."]
+            )
         async with self._lock:
             return await self._fetch_locked(kid, dump_to=out_dir)
 

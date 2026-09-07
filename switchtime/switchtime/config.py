@@ -33,6 +33,10 @@ class KidConfig:
     # reach a particular child's analytics.
     ixl_profile: str | None = None
     ixl_profile_password: str | None = None
+    # Remembered so a missing secret can be reported by the name you have to
+    # go and set, rather than as a generic 'no password'.
+    ixl_password_env_name: str | None = None
+    ixl_profile_password_env_name: str | None = None
     switch_device_id: str | None = None
     nintendo_session_token: str | None = None
     minutes_per_lesson: int | None = None
@@ -266,6 +270,8 @@ def load_config(path: str | Path | None = None) -> Config:
                 color=entry.get("color", KidConfig.color),
                 ixl_username=entry.get("ixl_username"),
                 ixl_password=_env(entry.get("ixl_password_env"), what="ixl password"),
+                ixl_password_env_name=entry.get("ixl_password_env"),
+                ixl_profile_password_env_name=entry.get("ixl_profile_password_env"),
                 ixl_profile=entry.get("ixl_profile"),
                 ixl_profile_password=_env(
                     entry.get("ixl_profile_password_env"), what="ixl profile password"
