@@ -6,10 +6,13 @@ file itself can be committed or shared without leaking anything.
 
 from __future__ import annotations
 
+import logging
 import os
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
+
+_LOG = logging.getLogger(__name__)
 
 DEFAULT_CONFIG_PATH = Path(os.environ.get("SWITCHTIME_CONFIG", "config.toml"))
 
@@ -25,6 +28,15 @@ class KidConfig:
     color: str = "#3e6fa6"
     ixl_username: str | None = None
     ixl_password: str | None = None
+    # A family IXL account signs in once, then each child picks their name from
+    # a list and enters a short password of their own. Both steps are needed to
+    # reach a particular child's analytics.
+    ixl_profile: str | None = None
+    ixl_profile_password: str | None = None
+    # Remembered so a missing secret can be reported by the name you have to
+    # go and set, rather than as a generic 'no password'.
+    ixl_password_env_name: str | None = None
+    ixl_profile_password_env_name: str | None = None
     switch_device_id: str | None = None
     nintendo_session_token: str | None = None
     minutes_per_lesson: int | None = None
@@ -56,12 +68,16 @@ class IXLConfig:
     force_poll_cooldown_seconds: int = 30
     headless: bool = True
     nav_timeout_ms: int = 45_000
+    # IXL runs a site per country and an account only works on its own. Ireland
+    # is ie.ixl.com, the UK uk.ixl.com, and so on; signing in on the wrong one
+    # fails in a way that looks exactly like a wrong password.
+    base_url: str = "https://www.ixl.com"
     signin_url: str = "https://www.ixl.com/signin"
     # Pages opened after sign-in; every JSON response seen while these load is
     # offered to the extractor.
     report_urls: tuple[str, ...] = (
+        "https://www.ixl.com/analytics",
         "https://www.ixl.com/analytics/questions-log",
-        "https://www.ixl.com/analytics/usage-details",
     )
     # A lesson counts only once its SmartScore reaches this. IXL treats 80 as
     # "proficient"; set to 0 to count any practised skill.
@@ -108,6 +124,45 @@ class Config:
         return kid.minutes_per_lesson or self.rules.minutes_per_lesson
 
 
+def load_env_file(path: Path) -> None:
+    """Fold KEY=VALUE lines from `path` into the environment.
+
+    The background service gets these through systemd's EnvironmentFile, but a
+    command run by hand would otherwise see nothing — so `switchtime devices`
+    would fail right after `nintendo-login` had just saved a token. A real
+    environment variable still wins, so an explicit export can override the file.
+    """
+    if not path.exists():
+        return
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return
+    for raw in lines:
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip()
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+            value = value[1:-1]
+        if not key:
+            continue
+        if key not in os.environ:
+            os.environ[key] = value
+        elif os.environ[key] != value:
+            # Precedence is deliberate, but a stale export shadowing a freshly
+            # saved secret looks exactly like the secret being wrong, so say so.
+            _LOG.warning(
+                "%s is set in your shell and differs from the value in %s. "
+                "The shell value is being used; run `unset %s` if it is stale.",
+                key,
+                path,
+                key,
+            )
+
+
 def _env(name: str | None, *, what: str) -> str | None:
     """Read a secret out of the environment, tolerating an unset variable."""
     if not name:
@@ -133,6 +188,9 @@ def load_config(path: str | Path | None = None) -> Config:
         raise ConfigError(
             f"No config at {path}. Copy config.example.toml to {path} and edit it."
         )
+    # Before any secret is looked up, so a hand-run command sees what the
+    # service sees.
+    load_env_file(path.parent / ".env.local")
     raw = tomllib.loads(path.read_text(encoding="utf-8"))
 
     server_raw = _subtable(raw, "server")
@@ -159,6 +217,7 @@ def load_config(path: str | Path | None = None) -> Config:
     )
 
     ixl_raw = _subtable(raw, "ixl")
+    _base = str(ixl_raw.get("base_url", IXLConfig.base_url)).rstrip("/")
     ixl = IXLConfig(
         enabled=bool(ixl_raw.get("enabled", IXLConfig.enabled)),
         poll_seconds=max(30, int(ixl_raw.get("poll_seconds", IXLConfig.poll_seconds))),
@@ -167,8 +226,14 @@ def load_config(path: str | Path | None = None) -> Config:
         ),
         headless=bool(ixl_raw.get("headless", IXLConfig.headless)),
         nav_timeout_ms=int(ixl_raw.get("nav_timeout_ms", IXLConfig.nav_timeout_ms)),
-        signin_url=ixl_raw.get("signin_url", IXLConfig.signin_url),
-        report_urls=tuple(ixl_raw.get("report_urls", IXLConfig.report_urls)),
+        base_url=_base,
+        # Derived from base_url so a country change is one setting, but still
+        # overridable outright for an unusual setup.
+        signin_url=ixl_raw.get("signin_url") or f"{_base}/signin",
+        report_urls=tuple(
+            ixl_raw.get("report_urls")
+            or (f"{_base}/analytics", f"{_base}/analytics/questions-log")
+        ),
         min_smartscore=int(ixl_raw.get("min_smartscore", IXLConfig.min_smartscore)),
         storage_state_dir=ixl_raw.get("storage_state_dir", IXLConfig.storage_state_dir),
     )
@@ -205,6 +270,12 @@ def load_config(path: str | Path | None = None) -> Config:
                 color=entry.get("color", KidConfig.color),
                 ixl_username=entry.get("ixl_username"),
                 ixl_password=_env(entry.get("ixl_password_env"), what="ixl password"),
+                ixl_password_env_name=entry.get("ixl_password_env"),
+                ixl_profile_password_env_name=entry.get("ixl_profile_password_env"),
+                ixl_profile=entry.get("ixl_profile"),
+                ixl_profile_password=_env(
+                    entry.get("ixl_profile_password_env"), what="ixl profile password"
+                ),
                 switch_device_id=entry.get("switch_device_id"),
                 nintendo_session_token=_env(
                     entry.get("nintendo_session_token_env"), what="nintendo token"

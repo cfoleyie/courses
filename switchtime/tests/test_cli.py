@@ -1,0 +1,485 @@
+from __future__ import annotations
+
+from switchtime.cli import oauth_state
+
+# The real pair from a failed sign-in: the states differ, which is exactly the
+# case Nintendo answers with an opaque "session_token_code is invalid".
+AUTHORIZE = (
+    "https://accounts.nintendo.com/connect/1.0.0/authorize?client_id=54789befb391a838"
+    "&redirect_uri=npf54789befb391a838%3A%2F%2Fauth&response_type=session_token_code"
+    "&session_token_code_challenge=7hZC5kYl6mComxkv8DB87dPw5BvnP_QWh9kXFW_oKno"
+    "&session_token_code_challenge_method=S256"
+    "&state=yqGEnvgeWKwpHZsXaUgGVkSZKMSbiQcCYwqDDbNstmeJbTPnYx&theme=login_form"
+)
+MISMATCHED_REDIRECT = (
+    "npf54789befb391a838://auth#session_token_code=eyJhbGciOiJIUzI1NiJ9.PAYLOAD.SIG"
+    "&state=NXSoRejSEkPIqJVUMLnaZixCleoNZTnImTnKPaoYqocdUvUsRL"
+    "&session_state=e181abea37221cabfdb4366b63819c215be9bec0"
+)
+
+
+class TestOAuthState:
+    def test_reads_state_from_the_authorize_query_string(self):
+        assert oauth_state(AUTHORIZE) == "yqGEnvgeWKwpHZsXaUgGVkSZKMSbiQcCYwqDDbNstmeJbTPnYx"
+
+    def test_reads_state_from_the_redirect_fragment(self):
+        assert oauth_state(MISMATCHED_REDIRECT) == "NXSoRejSEkPIqJVUMLnaZixCleoNZTnImTnKPaoYqocdUvUsRL"
+
+    def test_a_redirect_from_another_attempt_is_detectable(self):
+        assert oauth_state(AUTHORIZE) != oauth_state(MISMATCHED_REDIRECT)
+
+    def test_a_matching_pair_agrees(self):
+        good = "npf54789befb391a838://auth#session_token_code=abc&state=" + oauth_state(AUTHORIZE)
+        assert oauth_state(good) == oauth_state(AUTHORIZE)
+
+    def test_missing_state_is_none_rather_than_an_error(self):
+        assert oauth_state("npf54789befb391a838://auth#session_token_code=abc") is None
+
+    def test_surrounding_whitespace_is_tolerated(self):
+        assert oauth_state(f"  {MISMATCHED_REDIRECT}  ") is not None
+
+    def test_junk_input_does_not_raise(self):
+        assert oauth_state("not a url at all") is None
+
+
+class TestTokenStorage:
+    def test_creates_env_local_with_the_token(self, tmp_path):
+        from switchtime.cli import _store_secret
+
+        env = tmp_path / ".env.local"
+        _store_secret(env, "NINTENDO_SESSION_TOKEN", "TOKEN123")
+        assert "NINTENDO_SESSION_TOKEN=TOKEN123" in env.read_text()
+
+    def test_file_is_not_readable_by_others(self, tmp_path):
+        from switchtime.cli import _store_secret
+
+        env = tmp_path / ".env.local"
+        _store_secret(env, "NINTENDO_SESSION_TOKEN", "TOKEN123")
+        assert oct(env.stat().st_mode)[-3:] == "600"
+
+    def test_replaces_an_existing_token_rather_than_appending(self, tmp_path):
+        from switchtime.cli import _store_secret
+
+        env = tmp_path / ".env.local"
+        env.write_text("NINTENDO_SESSION_TOKEN=OLD\nIXL_PASSWORD_OLIVER=hunter2\n")
+        _store_secret(env, "NINTENDO_SESSION_TOKEN", "NEW")
+        body = env.read_text()
+        assert "OLD" not in body
+        assert body.count("NINTENDO_SESSION_TOKEN=") == 1
+
+    def test_keeps_the_other_secrets(self, tmp_path):
+        from switchtime.cli import _store_secret
+
+        env = tmp_path / ".env.local"
+        env.write_text("NINTENDO_SESSION_TOKEN=OLD\nIXL_PASSWORD_OLIVER=hunter2\n")
+        _store_secret(env, "NINTENDO_SESSION_TOKEN", "NEW")
+        assert "IXL_PASSWORD_OLIVER=hunter2" in env.read_text()
+
+    def test_replacing_a_blank_placeholder(self, tmp_path):
+        from switchtime.cli import _store_secret
+
+        env = tmp_path / ".env.local"
+        env.write_text("NINTENDO_SESSION_TOKEN=\nIXL_PASSWORD_ALICE=x\n")
+        _store_secret(env, "NINTENDO_SESSION_TOKEN", "NEW")
+        assert "NINTENDO_SESSION_TOKEN=NEW" in env.read_text()
+
+
+class TestEnvLocalPath:
+    def test_sits_beside_the_config_file(self, tmp_path):
+        from switchtime.cli import _env_local_path
+
+        config = tmp_path / "config.toml"
+        config.touch()
+        assert _env_local_path(str(config)) == tmp_path / ".env.local"
+
+    def test_defaults_to_the_working_directory(self):
+        from pathlib import Path
+
+        from switchtime.cli import _env_local_path
+
+        assert _env_local_path(None) == Path.cwd() / ".env.local"
+
+
+class TestEnvFileLoading:
+    def test_values_reach_the_environment(self, tmp_path, monkeypatch):
+        from switchtime.config import load_env_file
+
+        monkeypatch.delenv("NINTENDO_SESSION_TOKEN", raising=False)
+        env = tmp_path / ".env.local"
+        env.write_text("NINTENDO_SESSION_TOKEN=abc123\n")
+        load_env_file(env)
+        import os
+
+        assert os.environ["NINTENDO_SESSION_TOKEN"] == "abc123"
+
+    def test_a_real_environment_variable_wins(self, tmp_path, monkeypatch):
+        from switchtime.config import load_env_file
+
+        monkeypatch.setenv("NINTENDO_SESSION_TOKEN", "from-shell")
+        env = tmp_path / ".env.local"
+        env.write_text("NINTENDO_SESSION_TOKEN=from-file\n")
+        load_env_file(env)
+        import os
+
+        assert os.environ["NINTENDO_SESSION_TOKEN"] == "from-shell"
+
+    def test_comments_and_blank_lines_are_skipped(self, tmp_path, monkeypatch):
+        from switchtime.config import load_env_file
+
+        monkeypatch.delenv("IXL_PASSWORD_OLIVER", raising=False)
+        env = tmp_path / ".env.local"
+        env.write_text("# a comment\n\nIXL_PASSWORD_OLIVER=hunter2\n")
+        load_env_file(env)
+        import os
+
+        assert os.environ["IXL_PASSWORD_OLIVER"] == "hunter2"
+
+    def test_quotes_are_stripped(self, tmp_path, monkeypatch):
+        from switchtime.config import load_env_file
+
+        monkeypatch.delenv("IXL_PASSWORD_ALICE", raising=False)
+        env = tmp_path / ".env.local"
+        env.write_text("IXL_PASSWORD_ALICE='pa ss'\n")
+        load_env_file(env)
+        import os
+
+        assert os.environ["IXL_PASSWORD_ALICE"] == "pa ss"
+
+    def test_a_missing_file_is_not_an_error(self, tmp_path):
+        from switchtime.config import load_env_file
+
+        load_env_file(tmp_path / "nope.local")
+
+    def test_login_then_devices_sees_the_token(self, tmp_path, monkeypatch):
+        """The exact sequence that would otherwise fail: save, then read back."""
+        from switchtime.cli import _store_secret
+        from switchtime.config import load_config
+
+        monkeypatch.delenv("NINTENDO_SESSION_TOKEN", raising=False)
+        config_path = tmp_path / "config.toml"
+        config_path.write_text(
+            '[server]\ndatabase = "d.db"\n'
+            '[nintendo]\nsession_token_env = "NINTENDO_SESSION_TOKEN"\n'
+            '[[kids]]\nid = "oliver"\nname = "Oliver"\n'
+        )
+        _store_secret(tmp_path / ".env.local", "NINTENDO_SESSION_TOKEN", "TOKEN-FROM-LOGIN")
+        assert load_config(config_path).nintendo.session_token == "TOKEN-FROM-LOGIN"
+
+
+class TestShadowedSecrets:
+    def test_warns_when_the_shell_shadows_a_different_file_value(
+        self, tmp_path, monkeypatch, caplog
+    ):
+        import logging
+
+        from switchtime.config import load_env_file
+
+        monkeypatch.setenv("NINTENDO_SESSION_TOKEN", "stale-from-shell")
+        env = tmp_path / ".env.local"
+        env.write_text("NINTENDO_SESSION_TOKEN=fresh-from-login\n")
+        with caplog.at_level(logging.WARNING):
+            load_env_file(env)
+        assert "NINTENDO_SESSION_TOKEN" in caplog.text
+        assert "unset" in caplog.text
+
+    def test_silent_when_they_agree(self, tmp_path, monkeypatch, caplog):
+        import logging
+
+        from switchtime.config import load_env_file
+
+        monkeypatch.setenv("NINTENDO_SESSION_TOKEN", "same")
+        env = tmp_path / ".env.local"
+        env.write_text("NINTENDO_SESSION_TOKEN=same\n")
+        with caplog.at_level(logging.WARNING):
+            load_env_file(env)
+        assert caplog.text == ""
+
+
+class TestTokenShape:
+    def test_a_real_token_passes(self):
+        from switchtime.switch import looks_like_session_token
+
+        assert looks_like_session_token("eyJ" + "a" * 60 + "." + "b" * 60 + "." + "c" * 40)
+
+    def test_the_placeholder_that_caught_me_out_is_rejected(self):
+        from switchtime.switch import looks_like_session_token
+
+        assert not looks_like_session_token("the token it printed")
+
+    def test_empty_and_truncated_are_rejected(self):
+        from switchtime.switch import looks_like_session_token
+
+        assert not looks_like_session_token("")
+        assert not looks_like_session_token("eyJabc.def")
+
+    def test_whitespace_is_tolerated(self):
+        from switchtime.switch import looks_like_session_token
+
+        token = "eyJ" + "a" * 60 + "." + "b" * 60 + "." + "c" * 40
+        assert looks_like_session_token(f"  {token}\n")
+
+
+class TestGrantCommand:
+    def _config_file(self, tmp_path):
+        path = tmp_path / "config.toml"
+        path.write_text(
+            f'[server]\ndatabase = "{tmp_path}/g.db"\n'
+            '[rules]\nminutes_per_lesson = 30\n'
+            '[ixl]\nenabled = false\n'
+            '[nintendo]\nenabled = false\n'
+            '[[kids]]\nid = "oliver"\nname = "Oliver"\n'
+        )
+        return path
+
+    def test_grants_minutes(self, tmp_path, capsys):
+        import argparse
+
+        from switchtime.cli import cmd_grant
+        from switchtime.db import Database
+        from switchtime.ledger import balance
+
+        config = self._config_file(tmp_path)
+        args = argparse.Namespace(config=str(config), kid="oliver", minutes=30, note="")
+        assert cmd_grant(args) == 0
+        assert balance(Database(tmp_path / "g.db").events_for("oliver")) == 30
+        assert "30m" in capsys.readouterr().out
+
+    def test_removes_minutes(self, tmp_path):
+        import argparse
+
+        from switchtime.cli import cmd_grant
+        from switchtime.db import Database
+        from switchtime.ledger import balance
+
+        config = self._config_file(tmp_path)
+        cmd_grant(argparse.Namespace(config=str(config), kid="oliver", minutes=-20, note=""))
+        assert balance(Database(tmp_path / "g.db").events_for("oliver")) == -20
+
+    def test_unknown_kid_exits_nonzero(self, tmp_path, capsys):
+        import argparse
+
+        from switchtime.cli import cmd_grant
+
+        config = self._config_file(tmp_path)
+        args = argparse.Namespace(config=str(config), kid="nobody", minutes=30, note="")
+        assert cmd_grant(args) == 1
+        assert "oliver" in capsys.readouterr().err
+
+
+class TestIXLBaseUrl:
+    def _write(self, tmp_path, body: str):
+        path = tmp_path / "config.toml"
+        path.write_text(
+            f'[server]\ndatabase = "{tmp_path}/x.db"\n{body}\n'
+            '[[kids]]\nid = "oliver"\nname = "Oliver"\n'
+        )
+        return path
+
+    def test_country_site_drives_signin_and_reports(self, tmp_path):
+        from switchtime.config import load_config
+
+        config = load_config(self._write(tmp_path, '[ixl]\nbase_url = "https://ie.ixl.com"'))
+        assert config.ixl.signin_url == "https://ie.ixl.com/signin"
+        assert all("ie.ixl.com" in url for url in config.ixl.report_urls)
+
+    def test_trailing_slash_does_not_double_up(self, tmp_path):
+        from switchtime.config import load_config
+
+        config = load_config(self._write(tmp_path, '[ixl]\nbase_url = "https://ie.ixl.com/"'))
+        assert config.ixl.signin_url == "https://ie.ixl.com/signin"
+
+    def test_explicit_urls_still_win(self, tmp_path):
+        from switchtime.config import load_config
+
+        config = load_config(
+            self._write(
+                tmp_path,
+                '[ixl]\nbase_url = "https://ie.ixl.com"\n'
+                'signin_url = "https://custom.example/login"\n'
+                'report_urls = ["https://custom.example/report"]',
+            )
+        )
+        assert config.ixl.signin_url == "https://custom.example/login"
+        assert config.ixl.report_urls == ("https://custom.example/report",)
+
+    def test_default_is_the_us_site(self, tmp_path):
+        from switchtime.config import load_config
+
+        config = load_config(self._write(tmp_path, "[ixl]\nenabled = true"))
+        assert config.ixl.signin_url == "https://www.ixl.com/signin"
+
+    def test_the_404_usage_details_path_is_gone(self, tmp_path):
+        from switchtime.config import load_config
+
+        config = load_config(self._write(tmp_path, '[ixl]\nbase_url = "https://ie.ixl.com"'))
+        assert not any("usage-details" in url for url in config.ixl.report_urls)
+
+
+class TestFamilyProfileConfig:
+    def _write(self, tmp_path, kid_body: str):
+        path = tmp_path / "config.toml"
+        path.write_text(
+            f'[server]\ndatabase = "{tmp_path}/p.db"\n[[kids]]\n{kid_body}\n'
+        )
+        return path
+
+    def test_profile_and_its_password_are_loaded(self, tmp_path, monkeypatch):
+        from switchtime.config import load_config
+
+        monkeypatch.setenv("IXL_FAMILY_PASSWORD", "family-secret")
+        monkeypatch.setenv("IXL_PROFILE_OLIVER", "Foley")
+        config = load_config(
+            self._write(
+                tmp_path,
+                'id = "oliver"\nname = "Oliver"\n'
+                'ixl_username = "Franpod"\n'
+                'ixl_password_env = "IXL_FAMILY_PASSWORD"\n'
+                'ixl_profile = "Oliver"\n'
+                'ixl_profile_password_env = "IXL_PROFILE_OLIVER"\n',
+            )
+        )
+        kid = config.kid("oliver")
+        assert kid.ixl_username == "Franpod"
+        assert kid.ixl_password == "family-secret"
+        assert kid.ixl_profile == "Oliver"
+        assert kid.ixl_profile_password == "Foley"
+
+    def test_a_direct_account_needs_no_profile(self, tmp_path, monkeypatch):
+        from switchtime.config import load_config
+
+        monkeypatch.setenv("IXL_PASSWORD_OLIVER", "x")
+        config = load_config(
+            self._write(
+                tmp_path,
+                'id = "oliver"\nname = "Oliver"\n'
+                'ixl_username = "oliver"\nixl_password_env = "IXL_PASSWORD_OLIVER"\n',
+            )
+        )
+        kid = config.kid("oliver")
+        assert kid.ixl_profile is None
+        assert kid.ixl_ready, "a direct account is still usable"
+
+    def test_readiness_ignores_the_profile_password(self, tmp_path, monkeypatch):
+        """A missing profile password is reported at sign-in, not treated as
+        'no credentials at all' — the run should get far enough to say so."""
+        from switchtime.config import load_config
+
+        monkeypatch.setenv("IXL_FAMILY_PASSWORD", "family-secret")
+        monkeypatch.delenv("IXL_PROFILE_OLIVER", raising=False)
+        config = load_config(
+            self._write(
+                tmp_path,
+                'id = "oliver"\nname = "Oliver"\n'
+                'ixl_username = "Franpod"\n'
+                'ixl_password_env = "IXL_FAMILY_PASSWORD"\n'
+                'ixl_profile = "Oliver"\n'
+                'ixl_profile_password_env = "IXL_PROFILE_OLIVER"\n',
+            )
+        )
+        assert config.kid("oliver").ixl_ready
+        assert config.kid("oliver").ixl_profile_password is None
+
+
+class TestMissingSecrets:
+    def _config(self, tmp_path, kid_body: str):
+        from switchtime.config import load_config
+
+        path = tmp_path / "config.toml"
+        path.write_text(f'[server]\ndatabase = "{tmp_path}/m.db"\n[[kids]]\n{kid_body}\n')
+        return load_config(path)
+
+    def test_names_the_unset_family_password_variable(self, tmp_path, monkeypatch):
+        from switchtime.cli import missing_secrets
+
+        monkeypatch.delenv("IXL_FAMILY_PASSWORD", raising=False)
+        config = self._config(
+            tmp_path,
+            'id = "oliver"\nname = "Oliver"\n'
+            'ixl_username = "Franpod"\nixl_password_env = "IXL_FAMILY_PASSWORD"\n',
+        )
+        problems = missing_secrets(config)
+        assert any("IXL_FAMILY_PASSWORD" in p for p in problems)
+
+    def test_names_the_unset_profile_password_variable(self, tmp_path, monkeypatch):
+        from switchtime.cli import missing_secrets
+
+        monkeypatch.setenv("IXL_FAMILY_PASSWORD", "set")
+        monkeypatch.delenv("IXL_PROFILE_OLIVER", raising=False)
+        config = self._config(
+            tmp_path,
+            'id = "oliver"\nname = "Oliver"\n'
+            'ixl_username = "Franpod"\nixl_password_env = "IXL_FAMILY_PASSWORD"\n'
+            'ixl_profile = "Oliver"\nixl_profile_password_env = "IXL_PROFILE_OLIVER"\n',
+        )
+        assert any("IXL_PROFILE_OLIVER" in p for p in missing_secrets(config))
+
+    def test_silent_when_everything_is_set(self, tmp_path, monkeypatch):
+        from switchtime.cli import missing_secrets
+
+        monkeypatch.setenv("IXL_FAMILY_PASSWORD", "set")
+        monkeypatch.setenv("IXL_PROFILE_OLIVER", "Foley")
+        config = self._config(
+            tmp_path,
+            'id = "oliver"\nname = "Oliver"\n'
+            'ixl_username = "Franpod"\nixl_password_env = "IXL_FAMILY_PASSWORD"\n'
+            'ixl_profile = "Oliver"\nixl_profile_password_env = "IXL_PROFILE_OLIVER"\n',
+        )
+        assert missing_secrets(config) == []
+
+    def test_nothing_reported_when_ixl_is_switched_off(self, tmp_path, monkeypatch):
+        from switchtime.cli import missing_secrets
+
+        monkeypatch.delenv("IXL_FAMILY_PASSWORD", raising=False)
+        from switchtime.config import load_config
+
+        path = tmp_path / "config.toml"
+        path.write_text(
+            f'[server]\ndatabase = "{tmp_path}/m.db"\n[ixl]\nenabled = false\n'
+            '[[kids]]\nid = "oliver"\nname = "Oliver"\n'
+            'ixl_username = "Franpod"\nixl_password_env = "IXL_FAMILY_PASSWORD"\n'
+        )
+        assert missing_secrets(load_config(path)) == []
+
+
+class TestSetSecret:
+    def test_writes_a_named_secret_without_disturbing_others(self, tmp_path):
+        from switchtime.cli import _store_secret
+
+        env = tmp_path / ".env.local"
+        env.write_text("NINTENDO_SESSION_TOKEN=keep-me\n")
+        _store_secret(env, "THE_MAIN_LOGIN_PWD", "s3cret")
+        body = env.read_text()
+        assert "THE_MAIN_LOGIN_PWD=s3cret" in body
+        assert "NINTENDO_SESSION_TOKEN=keep-me" in body
+
+    def test_replaces_rather_than_duplicating(self, tmp_path):
+        from switchtime.cli import _store_secret
+
+        env = tmp_path / ".env.local"
+        _store_secret(env, "K", "one")
+        _store_secret(env, "K", "two")
+        body = env.read_text()
+        assert body.count("K=") == 1
+        assert "two" in body and "one" not in body
+
+    def test_stays_private(self, tmp_path):
+        from switchtime.cli import _store_secret
+
+        env = tmp_path / ".env.local"
+        _store_secret(env, "K", "v")
+        assert oct(env.stat().st_mode)[-3:] == "600"
+
+    def test_missing_vars_are_listed_by_name(self, tmp_path, monkeypatch):
+        from switchtime.cli import missing_secret_vars
+        from switchtime.config import load_config
+
+        monkeypatch.delenv("THE_MAIN_LOGIN_PWD", raising=False)
+        monkeypatch.setenv("IXL_PROFILE_OLIVER", "set")
+        path = tmp_path / "config.toml"
+        path.write_text(
+            f'[server]\ndatabase = "{tmp_path}/s.db"\n[[kids]]\n'
+            'id = "oliver"\nname = "Oliver"\n'
+            'ixl_username = "Franpod"\nixl_password_env = "THE_MAIN_LOGIN_PWD"\n'
+            'ixl_profile = "Oliver"\nixl_profile_password_env = "IXL_PROFILE_OLIVER"\n'
+        )
+        assert missing_secret_vars(load_config(path)) == [("Oliver", "THE_MAIN_LOGIN_PWD")]

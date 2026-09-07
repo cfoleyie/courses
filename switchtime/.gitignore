@@ -9,3 +9,5 @@ __pycache__/
 .pytest_cache/
 
 .env
+.env.local
+tools/run-service.sh
