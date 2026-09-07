@@ -1,0 +1,77 @@
+# Switch Time configuration.
+#
+# Copy to config.toml and edit. No secrets live in here — passwords and tokens
+# are named by environment variable so this file stays safe to commit or share.
+
+[server]
+host = "0.0.0.0"
+port = 8777
+# Read the PIN from the environment if you'd rather not have it in the file:
+#   parent_pin_env = "SWITCHTIME_PIN"
+parent_pin = "1234"
+database = "data/switchtime.db"
+timezone = "Europe/Dublin"
+
+[rules]
+# What one finished IXL skill is worth.
+minutes_per_lesson = 30
+# Ceiling on minutes that can be *earned* in one day. Stops a marathon session
+# on a wet Sunday from banking a fortnight of console time.
+daily_earn_cap_minutes = 180
+# Ceiling on the stored balance.
+max_balance_minutes = 360
+# true: unused minutes carry over. false: they expire at midnight.
+rollover = true
+# Minutes allowed even on an empty balance. 0 means the console locks.
+floor_minutes = 0
+
+[ixl]
+enabled = true
+# How often to check IXL, in seconds. 180 keeps it feeling near-live without
+# hammering the site; a kid can also tap "Check IXL now" in the app.
+poll_seconds = 180
+force_poll_cooldown_seconds = 30
+headless = true
+# A skill counts as finished at this SmartScore. IXL treats 80 as proficient.
+# Set to 0 to pay for any skill practised at all.
+min_smartscore = 80
+report_urls = [
+  "https://www.ixl.com/analytics/questions-log",
+  "https://www.ixl.com/analytics/usage-details",
+]
+storage_state_dir = "data/ixl-sessions"
+
+[nintendo]
+enabled = true
+# true logs the limit it would set without touching the console. Start here.
+dry_run = true
+timezone = "Europe/Dublin"
+lang = "en-GB"
+session_token_env = "NINTENDO_SESSION_TOKEN"
+
+# One block per child. Play-time limits are enforced per console, not per user
+# account, so this only behaves as intended with one child per Switch.
+[[kids]]
+id = "oliver"
+name = "Oliver"
+color = "#3e6fa6"
+ixl_username = "oliver.example"
+ixl_password_env = "IXL_PASSWORD_OLIVER"
+switch_device_id = "REPLACE_ME"          # from: switchtime devices
+# minutes_per_lesson = 30                # optional per-kid override
+
+[[kids]]
+id = "eleanor"
+name = "Eleanor"
+color = "#c79a2e"
+ixl_username = "eleanor.example"
+ixl_password_env = "IXL_PASSWORD_ELEANOR"
+switch_device_id = "REPLACE_ME"
+
+[[kids]]
+id = "alice"
+name = "Alice"
+color = "#b8455f"
+ixl_username = "alice.example"
+ixl_password_env = "IXL_PASSWORD_ALICE"
+switch_device_id = "REPLACE_ME"

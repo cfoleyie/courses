@@ -1,0 +1,15 @@
+{
+  "name": "Switch Time",
+  "short_name": "Switch Time",
+  "description": "IXL lessons turn into Nintendo Switch play time.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#eff1ec",
+  "theme_color": "#2f6f5e",
+  "icons": [
+    { "src": "/static/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "/static/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
+  ]
+}
