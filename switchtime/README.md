@@ -4,9 +4,9 @@ Finish a lesson on IXL, get time on the Switch. The console's daily play-time
 limit is driven from a minute ledger, so the reward lands without anyone
 unlocking anything by hand.
 
-It runs on a machine at home and serves a small web app that works on a
-Chromebook and an Android tablet — both are Chrome, so it installs to the home
-screen as a PWA.
+It runs on a machine at home and serves a small web app for a Chromebook, a
+tablet or a phone. Served over HTTPS it installs to the home screen as a proper
+app; see step 5, which is the one part that needs more than a LAN address.
 
 ## How it works
 
@@ -83,11 +83,45 @@ switchtime serve            # http://<this machine>:8777
 Leave `dry_run = true` until a couple of syncs report a sensible target limit.
 Then set it to `false` and the console starts following the ledger.
 
-### On the Chromebook and the tablet
+### 5. Put it on the Chromebook and your phone
 
-Open `http://<machine>:8777` in Chrome, then **⋮ → Install page as app** (or
-*Add to Home screen*). It runs full-screen with its own icon. Both devices need
-to be on the same network as the machine running the service.
+**Installing needs HTTPS.** A plain `http://192.168.x.x:8777` is not a secure
+origin, and Chrome then hides `navigator.serviceWorker` entirely and will not
+offer to install the page — verified, not assumed. Over plain HTTP you can still
+use the app as an ordinary bookmark; you just do not get the icon, the
+full-screen window, or the cached shell.
+
+The tidiest fix is [Tailscale](https://tailscale.com), which is free for
+personal use and gets you a real certificate plus access from outside the house
+— which matters for the phone, since approving a request is exactly the thing
+you want to do while not at home.
+
+On the machine running the service:
+
+```bash
+curl -fsSL https://tailscale.com/install.sh | sh
+sudo tailscale up
+sudo tailscale serve --bg 8777        # HTTPS in front of the app
+tailscale serve status                # prints the https://... name to use
+```
+
+Install Tailscale on the Chromebook and the phone, sign in with the same
+account, and both can reach that `https://` name from anywhere.
+
+**Chromebook:** open the URL in Chrome → **⋮** → *Cast, save and share* →
+**Install page as app** → *Install*. It lands in the launcher and opens in its
+own window.
+
+**Android phone:** open the URL in Chrome → **⋮** → **Add to Home screen** →
+*Install*. Chrome builds a real app from the manifest, so it gets the icon and
+opens full-screen. Note that *Install* and *Create shortcut* are different: only
+the former makes a standalone app.
+
+**iPhone:** open the URL in Safari (not Chrome — only Safari can install on iOS)
+→ Share → **Add to Home Screen**.
+
+If you would rather not use Tailscale, any HTTPS route works: a reverse proxy
+such as Caddy with a real domain, or Cloudflare Tunnel.
 
 ## Tuning the IXL side
 
@@ -148,6 +182,7 @@ only directory worth backing up.
 | `switchtime/switch.py` | Nintendo parental-controls client |
 | `switchtime/app.py` | HTTP API |
 | `switchtime/static/` | The web app |
+| `tools/make_icons.py` | Regenerates the PWA icons |
 
 ```bash
 pytest        # 112 tests, no network or credentials needed
