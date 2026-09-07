@@ -217,3 +217,50 @@ class TestTokenShape:
 
         token = "eyJ" + "a" * 60 + "." + "b" * 60 + "." + "c" * 40
         assert looks_like_session_token(f"  {token}\n")
+
+
+class TestGrantCommand:
+    def _config_file(self, tmp_path):
+        path = tmp_path / "config.toml"
+        path.write_text(
+            f'[server]\ndatabase = "{tmp_path}/g.db"\n'
+            '[rules]\nminutes_per_lesson = 30\n'
+            '[ixl]\nenabled = false\n'
+            '[nintendo]\nenabled = false\n'
+            '[[kids]]\nid = "oliver"\nname = "Oliver"\n'
+        )
+        return path
+
+    def test_grants_minutes(self, tmp_path, capsys):
+        import argparse
+
+        from switchtime.cli import cmd_grant
+        from switchtime.db import Database
+        from switchtime.ledger import balance
+
+        config = self._config_file(tmp_path)
+        args = argparse.Namespace(config=str(config), kid="oliver", minutes=30, note="")
+        assert cmd_grant(args) == 0
+        assert balance(Database(tmp_path / "g.db").events_for("oliver")) == 30
+        assert "30m" in capsys.readouterr().out
+
+    def test_removes_minutes(self, tmp_path):
+        import argparse
+
+        from switchtime.cli import cmd_grant
+        from switchtime.db import Database
+        from switchtime.ledger import balance
+
+        config = self._config_file(tmp_path)
+        cmd_grant(argparse.Namespace(config=str(config), kid="oliver", minutes=-20, note=""))
+        assert balance(Database(tmp_path / "g.db").events_for("oliver")) == -20
+
+    def test_unknown_kid_exits_nonzero(self, tmp_path, capsys):
+        import argparse
+
+        from switchtime.cli import cmd_grant
+
+        config = self._config_file(tmp_path)
+        args = argparse.Namespace(config=str(config), kid="nobody", minutes=30, note="")
+        assert cmd_grant(args) == 1
+        assert "oliver" in capsys.readouterr().err

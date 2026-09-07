@@ -106,6 +106,8 @@ variable still takes precedence if you would rather export one.
 ```bash
 switchtime check-config     # what is configured and what is missing
 switchtime sync oliver      # one pass, with dry_run still on
+switchtime grant oliver 30  # add minutes by hand, to watch the loop work
+switchtime status           # balances
 switchtime serve            # http://<this machine>:8777
 ```
 
@@ -250,5 +252,5 @@ limits. A Pi or any always-on box avoids both problems.
 | `tools/make_icons.py` | Regenerates the PWA icons |
 
 ```bash
-pytest        # 141 tests, no network or credentials needed
+pytest        # 144 tests, no network or credentials needed
 ```

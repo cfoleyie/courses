@@ -286,6 +286,24 @@ def cmd_sync(args: argparse.Namespace) -> int:
     return asyncio.run(run())
 
 
+def cmd_grant(args: argparse.Namespace) -> int:
+    """Add or remove minutes by hand. Useful for testing, and for a one-off."""
+    config = load_config(args.config)
+    known = [k.id for k in config.kids]
+    if args.kid not in known:
+        print(f"No kid called {args.kid!r}. Configured: {', '.join(known)}", file=sys.stderr)
+        return 1
+    db = Database(config.server.database)
+    engine = SyncEngine(config, db, FakeProvider(), NullSwitchClient())
+    engine.adjust(args.kid, args.minutes, args.note or "Granted from the command line")
+    current = balance(db.events_for(args.kid))
+    verb = "Added" if args.minutes >= 0 else "Removed"
+    print(f"{verb} {humanise(abs(args.minutes))} for {config.kid(args.kid).name}.")
+    print(f"Balance is now {humanise(current)}.")
+    print(f"\nRun `switchtime sync {args.kid}` to push it to the console.")
+    return 0
+
+
 def cmd_status(args: argparse.Namespace) -> int:
     config = load_config(args.config)
     db = Database(config.server.database)
@@ -360,6 +378,12 @@ def build_parser() -> argparse.ArgumentParser:
     sync = sub.add_parser("sync", help="run one sync pass now")
     sync.add_argument("kid", nargs="?")
     sync.set_defaults(func=cmd_sync)
+
+    grant = sub.add_parser("grant", help="add or remove minutes by hand")
+    grant.add_argument("kid")
+    grant.add_argument("minutes", type=int, help="negative to take time away")
+    grant.add_argument("--note", default="")
+    grant.set_defaults(func=cmd_grant)
 
     status = sub.add_parser("status", help="show balances")
     status.set_defaults(func=cmd_status)
