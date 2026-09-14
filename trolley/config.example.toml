@@ -1,0 +1,69 @@
+# Copy to config.toml and edit. Everything here has a working default, so the
+# smallest useful config is the two [[slots]] entries for your delivery days.
+
+[server]
+host = "0.0.0.0"
+port = 8815
+database = "data/trolley.db"
+timezone = "Europe/Dublin"
+
+# When the van comes. The order of these does not matter; the app always works
+# out the next delivery and the one after it, and asks whether each item will
+# last until the second one.
+[[slots]]
+day = "monday"
+at = "08:00"
+label = "Monday delivery"
+
+[[slots]]
+day = "friday"
+at = "08:00"
+label = "Friday delivery"
+
+[suggest]
+# Longest list worth reading before it gets ignored.
+max_suggestions = 12
+# Items the engine is less sure about than this are held back as "not enough
+# history to call" rather than suggested outright.
+min_confidence = 0.12
+min_score = 0.02
+# Include things that would last past this delivery but not the one after.
+# This is the point of the app; turning it off makes it a plain "overdue" list.
+include_soon = true
+# Each time you turn a suggestion down, its estimate stretches by this much,
+# up to this ceiling. Accepting a suggestion resets it.
+nudge_step = 1.15
+nudge_max = 2.0
+
+[notify]
+enabled = false
+# How long before the delivery to send the list. 14 hours before an 8am slot
+# is the evening before, while there is still time to change the order.
+hours_before = 14
+# "console", "ntfy" or "smtp".
+channel = "console"
+
+# ntfy: install the ntfy app, subscribe to a topic nobody else would guess.
+# ntfy_server = "https://ntfy.sh"
+# ntfy_topic = "my-house-shopping-3f8a"
+# Token, if your server needs one, goes in TROLLEY_NTFY_TOKEN.
+
+# Email: the password goes in TROLLEY_SMTP_PASSWORD, never here.
+# smtp_host = "smtp.gmail.com"
+# smtp_port = 587
+# smtp_user = "you@gmail.com"
+# smtp_from = "you@gmail.com"
+# smtp_to   = "you@gmail.com"
+
+# Product names the matcher gets wrong. The left side is any fragment of the
+# name on the receipt; the right side is the item key it should count as.
+[aliases]
+# "oat drink" = "milk"
+# "pampers" = "nappies"
+
+# Override how often something is expected to run out, in days. Only used until
+# there is enough real history to work it out, unless you set it on an item in
+# the web app, which overrides history permanently.
+[intervals]
+# "toilet-roll" = 21
+# "coffee" = 18

@@ -1,0 +1,26 @@
+[project]
+name = "trolley"
+version = "0.1.0"
+description = "Suggests what to add to the next grocery order, from what you usually buy."
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi>=0.110",
+  "uvicorn[standard]>=0.27",
+  "pydantic>=2.6",
+]
+
+[project.scripts]
+trolley = "trolley.cli:main"
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "pytest-asyncio>=0.23", "httpx>=0.27"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["trolley*"]
+
+[tool.setuptools.package-data]
+trolley = ["static/*"]

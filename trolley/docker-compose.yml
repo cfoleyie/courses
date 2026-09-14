@@ -1,0 +1,17 @@
+services:
+  trolley:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "8815:8815"
+    volumes:
+      - ./config.toml:/app/config.toml:ro
+      - ./data:/app/data
+      # Drop saved order emails in here, then run:
+      #   docker compose exec trolley trolley import /app/inbox
+      - ./inbox:/app/inbox:ro
+    environment:
+      # Populated from a .env file beside this compose file.
+      TROLLEY_SMTP_PASSWORD: ${TROLLEY_SMTP_PASSWORD:-}
+      TROLLEY_NTFY_TOKEN: ${TROLLEY_NTFY_TOKEN:-}
+      TZ: Europe/Dublin

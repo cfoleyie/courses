@@ -1,0 +1,15 @@
+{
+  "name": "Trolley",
+  "short_name": "Trolley",
+  "description": "Suggests what to add to the next grocery order, from what you usually buy.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f1f0ec",
+  "theme_color": "#1f5673",
+  "icons": [
+    { "src": "/static/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "/static/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
+  ]
+}

@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Trolley">
+  <rect width="64" height="64" rx="14" fill="#1f5673"/>
+  <g fill="none" stroke="#f1f0ec" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M13 16h5l4.2 20.5h22.6L49 22H21"/>
+    <circle cx="26" cy="46" r="3.2" fill="#f1f0ec" stroke="none"/>
+    <circle cx="42" cy="46" r="3.2" fill="#f1f0ec" stroke="none"/>
+  </g>
+  <path d="M33 25.5v9M28.5 30h9" stroke="#6db3d6" stroke-width="3.4" stroke-linecap="round"/>
+</svg>
