@@ -291,13 +291,71 @@ trolley serve       # the web app on http://localhost:8815
 `trolley demo` writes into the same database as everything else, so use a
 throwaway `config.toml` for it or delete the database afterwards.
 
-With Docker:
+## Keeping it running
+
+**Yes, it wants to be always on**, on a machine at home that already is. Three
+things need a process that is up:
+
+| What | How often | What it needs to be up for |
+| --- | --- | --- |
+| Reading order emails | every 15 minutes | picking up an order soon after you place it |
+| The reminder | once per delivery | the evening before, while the order can still change |
+| The web app | on demand | opening the list on your phone |
+
+It is not a heavy guest: about 55 MB of memory, effectively no CPU between
+checks, and a database that is 80 KB after three months of orders. A Raspberry
+Pi is more than enough, and if you already have a box running Switch Time, put
+it there.
+
+### With systemd
+
+`deploy/trolley.service` is ready to copy. It assumes the repo at
+`/opt/trolley` with its virtualenv in `.venv`; adjust the paths if not.
+
+```bash
+sudo cp deploy/trolley.service /etc/systemd/system/
+sudo systemctl enable --now trolley
+journalctl -u trolley -f          # what it is doing
+```
+
+It restarts on failure and comes back after a reboot. The app password is read
+from `/opt/trolley/.env`, which is what `trolley setup-mail` writes.
+
+### With Docker
 
 ```bash
 cp .env.example .env && mkdir -p data inbox
 docker compose up -d
-docker compose exec trolley trolley import /app/inbox
 ```
+
+`restart: unless-stopped` is already set, so it survives reboots.
+
+### Without a server at all
+
+If you would rather not run a daemon, two cron lines do the same work. You lose
+the web app, or rather you run `trolley serve` by hand when you want it, and
+the list reaches you by notification only. See `deploy/crontab.example`:
+
+```cron
+*/15 * * * * /opt/trolley/.venv/bin/trolley mail   >/dev/null
+*/30 * * * * /opt/trolley/.venv/bin/trolley notify >/dev/null
+```
+
+Both are safe to run as often as you like. `mail` only fetches what it has not
+seen before, and `notify` sends one reminder per delivery however many times it
+is asked. That guard is shared with the server, so neither way can nag you.
+
+### If the machine is off
+
+Nothing is lost, and nothing is sent twice.
+
+- **Off overnight, on in the morning.** The reminder fires as soon as the
+  machine is up, as long as the delivery is still within the lead time. Booting
+  at 7am for an 8am delivery still gets the list, just later than it meant to.
+- **Off for the whole window.** That reminder is missed; attention moves to the
+  next delivery. The list is still there in the web app.
+- **Off for days.** The mailbox is read from where it left off, so every order
+  email that arrived meanwhile is picked up in order on the first check.
 
 ## Reminders
 

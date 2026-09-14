@@ -1,0 +1,50 @@
+# Keeps Trolley running across reboots on a machine that is always on.
+#
+#   sudo cp deploy/trolley.service /etc/systemd/system/
+#   sudo systemctl edit trolley            # adjust User and paths if needed
+#   sudo systemctl enable --now trolley
+#   systemctl status trolley
+#   journalctl -u trolley -f               # what it is doing
+#
+# Paths below assume the repo is checked out at /opt/trolley with its virtualenv
+# in .venv, config.toml beside it, and the database under data/.
+
+[Unit]
+Description=Trolley grocery restock suggestions
+Documentation=https://github.com/cfoleyie/courses/tree/master/trolley
+# Wants the network, but does not fail without it: the mailbox check backs off
+# and retries on its own, so a slow router at boot is not a reason to give up.
+Wants=network-online.target
+After=network-online.target
+# Give up restarting only if it dies constantly; the journal says why.
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=trolley
+Group=trolley
+WorkingDirectory=/opt/trolley
+# The IMAP app password lives here, mode 600, never in config.toml.
+EnvironmentFile=/opt/trolley/.env
+Environment=TROLLEY_CONFIG=/opt/trolley/config.toml
+ExecStart=/opt/trolley/.venv/bin/trolley serve
+Restart=always
+RestartSec=10s
+
+# It reads mail and writes one SQLite file. It has no business doing anything else.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/trolley/data
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+
+[Install]
+WantedBy=multi-user.target

@@ -21,7 +21,7 @@ from pydantic import BaseModel, Field
 
 from . import ingest as ingest_module
 from . import mailbox as mailbox_module
-from . import notify, suggest
+from . import notify, reminders, suggest
 from .config import Config, load_config
 from .db import Database
 from .importers import CsvImporter, EmailImporter, ImportError_, detect
@@ -368,25 +368,10 @@ async def _mailbox_loop(store: Database, config: Config) -> None:
 async def _maybe_notify(store: Database, config: Config, now: datetime | None = None) -> bool:
     """Send the reminder for the next slot if it is time and it has not gone.
 
-    The last notified slot is stored, so a restart inside the reminder window
-    does not send the same list twice.
+    The decision lives in `reminders` so the command line, running from cron,
+    makes it the same way.
     """
-    report = suggest.build(store, config, now)
-    if report is None:
-        return False
-    moment = report.generated_at
-    if report.slot.at - moment > timedelta(hours=config.notify.hours_before):
-        return False
-
-    marker = f"notified:{report.slot.day.isoformat()}"
-    if store.get_state(marker):
-        return False
-    if not report.suggestions:
-        store.set_state(marker, "empty")
-        return False
-
-    body = suggest.render_text(report)
-    subject = f"Trolley: {len(report.suggestions)} for {report.slot.label}"
-    await asyncio.to_thread(notify.send, config.notify, subject, body)
-    store.set_state(marker, moment.isoformat(timespec="seconds"))
-    return True
+    outcome = await asyncio.to_thread(reminders.send_if_due, store, config, now)
+    if outcome.sent:
+        _LOG.info("reminder: %s", outcome.reason)
+    return outcome.sent

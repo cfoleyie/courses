@@ -1,0 +1,22 @@
+# The other way to run Trolley: no daemon, just two commands on a timer.
+#
+# You lose the web app (run `trolley serve` by hand when you want it) and get
+# the list by notification only. Everything else works the same.
+#
+#   crontab -e      and paste the lines below, adjusting the paths
+#
+# Both commands are safe to run as often as you like. `mail` only fetches
+# what it has not seen, and `notify` sends one reminder per delivery however
+# many times it is asked.
+
+TROLLEY_CONFIG=/opt/trolley/config.toml
+# Cron does not read .env, so the app password has to be named here or in a
+# wrapper script. Keep this crontab private: crontab -l is readable by you only.
+TROLLEY_IMAP_PASSWORD=your-app-password
+
+# Read new order emails every 15 minutes.
+*/15 * * * * /opt/trolley/.venv/bin/trolley mail >/dev/null
+
+# Check whether a reminder is due, every 30 minutes. It goes out once, the
+# configured number of hours before each delivery.
+*/30 * * * * /opt/trolley/.venv/bin/trolley notify >/dev/null

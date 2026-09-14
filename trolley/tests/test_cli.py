@@ -99,16 +99,32 @@ def test_link_moves_a_product_onto_another_item(config_file, tmp_path, capsys) -
     assert "now counts as Milk" in capsys.readouterr().out
 
 
-def test_notify_stays_quiet_when_nothing_is_due(config_file, capsys) -> None:
-    assert run(config_file, "notify") == 0
-    assert "nothing due" in capsys.readouterr().out
-
-
-def test_notify_sends_the_list_when_there_is_one(config_file, capsys) -> None:
+def test_notify_says_why_it_held_off(config_file, capsys) -> None:
+    """Run from cron, the usual answer is "not yet", and it should say so."""
     run(config_file, "demo", "--weeks", "20")
     capsys.readouterr()
+
     assert run(config_file, "notify") == 0
-    assert "delivery" in capsys.readouterr().out
+    said = capsys.readouterr().out
+    assert "delivery" in said
+    # Either it is too early, or it went. Never silence, never a repeat.
+    assert "hours before" in said or "sent" in said or "nothing looks due" in said
+
+
+def test_notify_run_repeatedly_does_not_repeat_itself(config_file, capsys) -> None:
+    run(config_file, "demo", "--weeks", "20")
+    capsys.readouterr()
+
+    for _ in range(5):
+        assert run(config_file, "notify") == 0
+    assert capsys.readouterr().out.count("sent ") <= 1
+
+
+def test_notify_force_sends_on_demand(config_file, capsys) -> None:
+    run(config_file, "demo", "--weeks", "20")
+    capsys.readouterr()
+    assert run(config_file, "notify", "--force") == 0
+    assert "sent the list" in capsys.readouterr().out
 
 
 def test_a_broken_config_is_reported_rather_than_crashing(tmp_path, capsys) -> None:

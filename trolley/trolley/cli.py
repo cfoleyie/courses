@@ -154,19 +154,15 @@ def cmd_link(args: argparse.Namespace, config: Config) -> int:
 
 
 def cmd_notify(args: argparse.Namespace, config: Config) -> int:
-    report = suggest.build(_store(config), config)
-    if report is None:
-        print("no delivery slots configured", file=sys.stderr)
-        return 1
-    if not report.suggestions and not args.force:
-        print("nothing due; not sending")
-        return 0
-    body = suggest.render_text(report)
+    """Send the reminder if it is due. Safe to run from cron as often as you like."""
+    from . import reminders
+
     try:
-        notify.send(config.notify, f"Trolley: {report.slot.label}", body)
+        outcome = reminders.send_if_due(_store(config), config, force=args.force)
     except notify.NotifyError as exc:
         print(str(exc), file=sys.stderr)
         return 1
+    print(outcome.reason)
     return 0
 
 
@@ -369,7 +365,11 @@ def build_parser() -> argparse.ArgumentParser:
     mail.set_defaults(func=cmd_mail)
 
     notify_cmd = subparsers.add_parser("notify", help="send the reminder now")
-    notify_cmd.add_argument("--force", action="store_true", help="send even if nothing is due")
+    notify_cmd.add_argument(
+        "--force",
+        action="store_true",
+        help="send now regardless of timing, without affecting the scheduled one",
+    )
     notify_cmd.set_defaults(func=cmd_notify)
 
     demo = subparsers.add_parser("demo", help="load a year of invented history to try it out")
