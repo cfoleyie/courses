@@ -27,6 +27,15 @@ max_suggestions = 12
 # history to call" rather than suggested outright.
 min_confidence = 0.12
 min_score = 0.02
+# Learn which delivery each item belongs to, so the weekend shopping is
+# suggested for the weekend order rather than the midweek one. A day pinned by
+# hand with `trolley slot <item> <day>` still applies when this is off.
+slot_awareness = true
+# How many purchases before a delivery-day habit is believed, and what share of
+# them (weighted towards recent ones) must fall on that day. Half is what pure
+# chance gives with two deliveries a week, so 0.75 is a real lean.
+slot_min_purchases = 4
+slot_threshold = 0.75
 # Include things that would last past this delivery but not the one after.
 # This is the point of the app; turning it off makes it a plain "overdue" list.
 include_soon = true

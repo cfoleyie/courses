@@ -76,6 +76,19 @@ def upcoming(specs: list[SlotSpec], now: datetime, count: int = 2, *, tz: str = 
     return found[:count]
 
 
+def next_by_weekday(slots: list[Slot]) -> dict[str, date]:
+    """The soonest upcoming delivery for each weekday that has one.
+
+    Used to answer "when does this item's usual delivery come round again",
+    which is what decides whether it can wait for it.
+    """
+    found: dict[str, date] = {}
+    for slot in slots:
+        day = WEEKDAYS[slot.at.weekday()]
+        found.setdefault(day, slot.day)
+    return found
+
+
 def planning_window(
     specs: list[SlotSpec], now: datetime, *, tz: str = "Europe/Dublin"
 ) -> tuple[Slot, Slot] | None:

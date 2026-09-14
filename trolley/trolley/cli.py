@@ -170,6 +170,51 @@ def cmd_notify(args: argparse.Namespace, config: Config) -> int:
     return 0
 
 
+def cmd_slot(args: argparse.Namespace, config: Config) -> int:
+    """Pin which delivery an item belongs to, or hand it back to the engine."""
+    from .slots import WEEKDAYS
+
+    db = _store(config)
+    from . import normalise
+
+    key, _, _ = normalise.resolve(args.item, tuple(i.key for i in db.items()), config.aliases)
+    item = db.item_by_key(key)
+    if item is None:
+        print(f"no item matching {args.item!r} (try `trolley items`)", file=sys.stderr)
+        return 1
+
+    if args.day is None:
+        from . import suggest as suggest_module
+
+        est = next(
+            (e for e in suggest_module.estimates(db, config, date.today()) if e.item.id == item.id),
+            None,
+        )
+        if est is None or not est.preferred_slot:
+            print(f"{item.name}: no usual delivery day")
+        else:
+            how = "pinned" if est.slot_pinned else f"learned, {est.slot_share:.0%} of purchases"
+            print(f"{item.name}: {est.preferred_slot} ({how})")
+        return 0
+
+    choice = args.day.strip().casefold()
+    if choice not in (*WEEKDAYS, "any", "auto"):
+        print(
+            f"expected a weekday, 'any' to never hold it back, or 'auto' to learn it; "
+            f"got {args.day!r}",
+            file=sys.stderr,
+        )
+        return 1
+    db.update_item(item.id, slot_preference="" if choice == "auto" else choice)
+    if choice == "auto":
+        print(f"{item.name}: back to learning its usual delivery day")
+    elif choice == "any":
+        print(f"{item.name}: will be suggested for whichever delivery is next")
+    else:
+        print(f"{item.name}: only suggested for the {choice} delivery")
+    return 0
+
+
 def cmd_setup_mail(args: argparse.Namespace, config: Config) -> int:
     """Ask for the mailbox details, prove they work, then write them down."""
     from dataclasses import replace
@@ -289,6 +334,18 @@ def build_parser() -> argparse.ArgumentParser:
     link.add_argument("raw_name", help='the product name as it appears on receipts')
     link.add_argument("item_key", help='the item key, e.g. "toilet-roll"')
     link.set_defaults(func=cmd_link)
+
+    slot = subparsers.add_parser(
+        "slot", help="which delivery an item belongs to (steak is a Friday thing)"
+    )
+    slot.add_argument("item", help="product or item name")
+    slot.add_argument(
+        "day",
+        nargs="?",
+        help="a weekday, 'any' to never hold it back, or 'auto' to learn it; "
+             "omit to see what it currently thinks",
+    )
+    slot.set_defaults(func=cmd_slot)
 
     setup = subparsers.add_parser(
         "setup-mail", help="connect a mailbox, test it, and save the settings"

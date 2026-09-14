@@ -33,6 +33,10 @@ class Item:
     paused: bool = False
     #: Suppress suggestions for slots delivering on or before this date.
     snoozed_until: date | None = None
+    #: Which delivery this belongs to. "" learns it from the history, "any"
+    #: turns the whole idea off for this item, and a weekday name pins it:
+    #: steak is a Friday thing whatever the arithmetic says.
+    slot_preference: str = ""
     #: Grows each time a suggestion is turned down; stretches the estimate.
     nudge: float = 1.0
 
@@ -67,6 +71,12 @@ class Estimate:
     #: Where the interval came from: "history", "prior", "override" or "none".
     basis: str = "none"
     purchases: int = 0
+    #: The weekday this is usually bought on, when there is a clear one.
+    preferred_slot: str | None = None
+    #: The share of recent purchases that fell in that slot, 0..1.
+    slot_share: float = 0.0
+    #: True when the user pinned the slot rather than the history suggesting it.
+    slot_pinned: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -78,6 +88,8 @@ class Suggestion:
     score: float
     reason: str
     quantity: float = 1.0
+    #: Held back for a later delivery this item is usually bought in.
+    deferred_to: str | None = None
 
     @property
     def item(self) -> Item:

@@ -21,6 +21,7 @@ import math
 from datetime import date, timedelta
 
 from .model import Estimate, Item, Purchase, Status, Suggestion
+from .slots import WEEKDAYS
 
 #: Older gaps still count, but a habit from four months ago counts half as much
 #: as last week's. Long enough to survive a holiday, short enough to follow a
@@ -36,6 +37,15 @@ MIN_SCATTER_CONFIDENCE = 0.15
 
 #: An item seen once, with no catalogue prior, cannot be predicted at all.
 CONFIDENCE_FROM_PRIOR = 0.3
+
+#: A slot preference needs this many purchases behind it before it is believed.
+#: With two deliveries a week, four in a row on the same day is already an
+#: unlikely coincidence; fewer than that is just a short run.
+SLOT_MIN_PURCHASES = 4
+
+#: And this share of them, by recency weight, must fall in that one slot. Half
+#: is what pure chance gives with two deliveries, so this is a real lean.
+SLOT_THRESHOLD = 0.75
 
 #: How a score is split between "it is in the window at all" (BASE), "how long
 #: it would be out of stock" (URGENCY) and "how far past due it already is"
@@ -102,11 +112,50 @@ def merge_same_day(purchases: list[Purchase]) -> list[Purchase]:
     return [by_day[day] for day in sorted(by_day)]
 
 
+def slot_affinity(
+    purchases: list[Purchase],
+    today: date,
+    *,
+    min_purchases: int = SLOT_MIN_PURCHASES,
+    threshold: float = SLOT_THRESHOLD,
+) -> tuple[str | None, float]:
+    """Which weekday an item is usually bought on, if it clearly is one.
+
+    Steak and beer go in the Friday order for the weekend; chicken goes in the
+    Monday one. Nothing in the interval arithmetic can see that, because both
+    are just purchases a week apart. This looks at the day of the week instead.
+
+    Recent purchases count for more, as everywhere else, so a habit that has
+    moved is followed rather than averaged with the one it replaced.
+    """
+    history = merge_same_day(purchases)
+    if len(history) < min_purchases:
+        return None, 0.0
+
+    weights: dict[str, float] = {}
+    total = 0.0
+    for purchase in history:
+        age = max((today - purchase.bought_on).days, 0)
+        weight = 0.5 ** (age / HALF_LIFE_DAYS)
+        day = WEEKDAYS[purchase.bought_on.weekday()]
+        weights[day] = weights.get(day, 0.0) + weight
+        total += weight
+
+    if total <= 0:
+        return None, 0.0
+    day, weight = max(weights.items(), key=lambda pair: pair[1])
+    share = weight / total
+    return (day, share) if share >= threshold else (None, share)
+
+
 def estimate(
     item: Item,
     purchases: list[Purchase],
     today: date,
     prior: float | None = None,
+    *,
+    slot_min_purchases: int = SLOT_MIN_PURCHASES,
+    slot_threshold: float = SLOT_THRESHOLD,
 ) -> Estimate:
     """Build the engine's view of one item from its purchase history."""
     history = merge_same_day(purchases)
@@ -146,6 +195,18 @@ def estimate(
         interval = unit_interval * last_quantity * max(item.nudge, 0.1)
         due_on = last.bought_on + timedelta(days=round(interval))
 
+    # A pinned preference wins outright; otherwise the history is asked.
+    pinned = (item.slot_preference or "").strip().casefold()
+    if pinned and pinned != "any":
+        preferred, share, slot_pinned = pinned, 1.0, True
+    elif pinned == "any":
+        preferred, share, slot_pinned = None, 0.0, False
+    else:
+        preferred, share = slot_affinity(
+            history, today, min_purchases=slot_min_purchases, threshold=slot_threshold
+        )
+        slot_pinned = False
+
     return Estimate(
         item=item,
         unit_interval=unit_interval,
@@ -156,6 +217,9 @@ def estimate(
         confidence=round(confidence, 4),
         basis=basis,
         purchases=len(history),
+        preferred_slot=preferred,
+        slot_share=round(share, 3),
+        slot_pinned=slot_pinned,
     )
 
 
@@ -196,18 +260,50 @@ def explain(est: Estimate, today: date, status: Status) -> str:
     return f"{lead} Usually every {every}; last bought {bought}."
 
 
+def _defer_to(
+    est: Estimate,
+    slot_weekday: str | None,
+    own_slot_date: date | None,
+) -> str | None:
+    """Whether this item should wait for the delivery it is usually bought in.
+
+    Steak bought every Friday comes due on a Friday, and the "will it last
+    until the next delivery" rule would put it on Monday's list every week,
+    because Friday is exactly when it runs out. It is not needed on Monday: it
+    is needed on Friday, and Friday's van arrives in time.
+
+    A pinned slot waits unconditionally, because the user has said this is a
+    weekend thing. A slot merely learned from the history gives way when the
+    item would actually run dry before its own delivery came round.
+    """
+    preferred = est.preferred_slot
+    if not preferred or not slot_weekday or preferred == slot_weekday:
+        return None
+    if own_slot_date is None:
+        return None  # That delivery is no longer in the schedule.
+    if est.slot_pinned or (est.due_on is not None and est.due_on >= own_slot_date):
+        return preferred
+    return None
+
+
 def assess(
     est: Estimate,
     *,
     today: date,
     slot_date: date,
     horizon_date: date,
+    slot_weekday: str | None = None,
+    own_slot_date: date | None = None,
 ) -> Suggestion | None:
     """Decide whether an item belongs on the list for the slot being planned.
 
     The test is not "is it due today" but "will it run out before the delivery
     *after* this one". Missing this order means waiting the rest of the week,
     so anything that would not survive that long has to go on now.
+
+    An item with a delivery of its own is the exception: see `_defer_to`. It
+    still comes back as a suggestion, marked with the delivery it is waiting
+    for, so the caller can show it as held rather than losing it silently.
     """
     item = est.item
     if item.paused or est.due_on is None or est.interval is None:
@@ -236,10 +332,16 @@ def assess(
     # is not overdue, but it still belongs on the list, just at the bottom.
     score = est.confidence * (BASE_WEIGHT + URGENCY_WEIGHT * urgency + OVERDUE_WEIGHT * overdue)
 
+    deferred_to = _defer_to(est, slot_weekday, own_slot_date)
+    reason = explain(est, today, status)
+    if deferred_to:
+        reason = f"Usually a {deferred_to.capitalize()} item. {reason}"
+
     return Suggestion(
         estimate=est,
         status=status,
         score=round(score, 4),
-        reason=explain(est, today, status),
+        reason=reason,
         quantity=max(1.0, round(est.last_quantity)),
+        deferred_to=deferred_to,
     )

@@ -172,3 +172,27 @@ async def test_nothing_due_means_no_interruption(db: Database, config: Config, c
     sunday_evening = datetime(2026, 9, 13, 19, 0, tzinfo=DUBLIN)
     assert await _maybe_notify(db, _notify_config(config), sunday_evening) is False
     assert capsys.readouterr().out == ""
+
+
+def test_the_api_reports_the_delivery_an_item_belongs_to(client: TestClient, db: Database) -> None:
+    items = client.get("/api/items").json()["items"]
+    assert all("preferred_slot" in item for item in items)
+
+    milk = next(item for item in items if item["key"] == "milk")
+    assert client.patch(
+        f"/api/items/{milk['item_id']}", json={"slot_preference": "friday"}
+    ).status_code == 200
+
+    after = next(i for i in client.get("/api/items").json()["items"] if i["key"] == "milk")
+    assert (after["preferred_slot"], after["slot_pinned"]) == ("friday", True)
+
+
+def test_a_nonsense_delivery_day_is_refused(client: TestClient) -> None:
+    milk = next(i for i in client.get("/api/items").json()["items"] if i["key"] == "milk")
+    response = client.patch(f"/api/items/{milk['item_id']}", json={"slot_preference": "funday"})
+    assert response.status_code == 400
+    assert "weekday" in response.json()["detail"]
+
+
+def test_suggestions_carry_the_held_back_list(client: TestClient) -> None:
+    assert "deferred" in client.get("/api/suggestions").json()

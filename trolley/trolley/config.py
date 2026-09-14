@@ -53,6 +53,13 @@ class SuggestConfig:
     min_score: float = 0.02
     #: Include things that last past this delivery but not the one after.
     include_soon: bool = True
+    #: Learn which delivery each item belongs to, so the weekend shopping is
+    #: suggested for the weekend order rather than the midweek one.
+    slot_awareness: bool = True
+    #: How many purchases before a delivery-day habit is believed, and what
+    #: share of them must fall on that day.
+    slot_min_purchases: int = 4
+    slot_threshold: float = 0.75
     #: Each turned-down suggestion stretches the estimate by this much...
     nudge_step: float = 1.15
     #: ...up to this ceiling, so an item can never be pushed out for ever.

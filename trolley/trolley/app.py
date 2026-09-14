@@ -26,7 +26,7 @@ from .config import Config, load_config
 from .db import Database
 from .importers import CsvImporter, EmailImporter, ImportError_, detect
 from .model import Estimate, Suggestion
-from .slots import Slot
+from .slots import WEEKDAYS, Slot
 
 _LOG = logging.getLogger(__name__)
 STATIC_DIR = Path(__file__).parent / "static"
@@ -50,6 +50,8 @@ class ItemBody(BaseModel):
     category: str | None = Field(default=None, max_length=40)
     interval_override: float | None = Field(default=None, ge=0.5, le=365)
     paused: bool | None = None
+    #: "" to learn it, "any" to ignore it, or a weekday to pin it.
+    slot_preference: str | None = Field(default=None, max_length=12)
 
 
 class PurchaseBody(BaseModel):
@@ -84,6 +86,9 @@ def _estimate_json(est: Estimate) -> dict[str, Any]:
         "basis": est.basis,
         "purchases": est.purchases,
         "paused": est.item.paused,
+        "preferred_slot": est.preferred_slot,
+        "slot_share": est.slot_share,
+        "slot_pinned": est.slot_pinned,
     }
 
 
@@ -94,7 +99,21 @@ def _suggestion_json(suggestion: Suggestion) -> dict[str, Any]:
         "score": suggestion.score,
         "reason": suggestion.reason,
         "quantity": suggestion.quantity,
+        "deferred_to": suggestion.deferred_to,
     }
+
+
+def _valid_slot(value: str) -> str:
+    """Accept a weekday, "any", or "" to go back to learning it."""
+    cleaned = value.strip().casefold()
+    if cleaned in ("", "auto"):
+        return ""
+    if cleaned == "any" or cleaned in WEEKDAYS:
+        return cleaned
+    raise HTTPException(
+        400,
+        f"slot_preference must be a weekday, 'any', or '' to learn it; got {value!r}",
+    )
 
 
 def build_app(config: Config | None = None, *, db: Database | None = None) -> FastAPI:
@@ -136,6 +155,7 @@ def build_app(config: Config | None = None, *, db: Database | None = None) -> Fa
             "horizon": _slot_json(report.horizon),
             "generated_at": report.generated_at.isoformat(),
             "suggestions": [_suggestion_json(s) for s in report.suggestions],
+            "deferred": [_suggestion_json(s) for s in report.deferred],
             "unsure": [_estimate_json(e) for e in report.unsure],
             "list": store.list_for(report.slot.day),
         }
@@ -210,6 +230,9 @@ def build_app(config: Config | None = None, *, db: Database | None = None) -> Fa
         if store.item(item_id) is None:
             raise HTTPException(404, f"no item with id {item_id}")
         fields = {k: v for k, v in body.model_dump().items() if v is not None}
+        slot = fields.get("slot_preference")
+        if slot:
+            fields["slot_preference"] = _valid_slot(slot)
         store.update_item(item_id, **fields)
         return {"ok": True}
 

@@ -26,6 +26,8 @@ CREATE TABLE IF NOT EXISTS items (
     paused            INTEGER NOT NULL DEFAULT 0,
     snoozed_until     TEXT,
     nudge             REAL    NOT NULL DEFAULT 1.0,
+    -- "" learns the usual delivery day, "any" ignores it, a weekday pins it.
+    slot_preference   TEXT    NOT NULL DEFAULT '',
     created_at        TEXT    NOT NULL
 );
 
@@ -92,6 +94,7 @@ CREATE TABLE IF NOT EXISTS state (
 #: (table, column, definition) for columns added after the first release.
 MIGRATIONS: tuple[tuple[str, str, str], ...] = (
     ("orders", "stage", "INTEGER NOT NULL DEFAULT 1"),
+    ("items", "slot_preference", "TEXT NOT NULL DEFAULT ''"),
 )
 
 
@@ -114,6 +117,7 @@ def _item(row: sqlite3.Row) -> Item:
         paused=bool(row["paused"]),
         snoozed_until=_as_date(row["snoozed_until"]),
         nudge=row["nudge"],
+        slot_preference=row["slot_preference"] or "",
     )
 
 
@@ -190,7 +194,10 @@ class Database:
         return [_item(row) for row in rows]
 
     def update_item(self, item_id: int, **fields: Any) -> Item | None:
-        allowed = {"name", "category", "unit", "interval_override", "paused", "snoozed_until", "nudge"}
+        allowed = {
+            "name", "category", "unit", "interval_override",
+            "paused", "snoozed_until", "nudge", "slot_preference",
+        }
         changes = {key: value for key, value in fields.items() if key in allowed}
         if not changes:
             return self.item(item_id)

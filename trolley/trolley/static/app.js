@@ -4,7 +4,7 @@
 (function () {
   "use strict";
 
-  var state = { slot: null, horizon: null, suggestions: [], unsure: [], list: [], items: [], mailbox: null };
+  var state = { slot: null, horizon: null, suggestions: [], deferred: [], unsure: [], list: [], items: [], mailbox: null };
   var ui = { tab: "suggest", busy: false, paste: "", matches: null, dry: true };
   var REFRESH_MS = 120000;
 
@@ -91,6 +91,7 @@
       state.slot = data.slot;
       state.horizon = data.horizon;
       state.suggestions = data.suggestions;
+      state.deferred = data.deferred || [];
       state.unsure = data.unsure;
       state.list = data.list;
       render();
@@ -206,6 +207,25 @@
       nodes = state.suggestions.map(suggestionCard);
     }
 
+    if (state.deferred.length) {
+      nodes.push(el("div", { class: "section-title", text: "Waiting for their usual delivery" }));
+      nodes.push(el("div", { class: "card tight" }, state.deferred.map(function (held) {
+        return el("div", { class: "item-row" }, [
+          el("div", { class: "grow" }, [
+            el("div", { class: "name" }, [
+              el("span", { text: held.name }),
+              el("span", { class: "pill quiet", text: held.deferred_to })
+            ]),
+            el("div", { class: "meta", text: held.reason })
+          ]),
+          el("button", {
+            class: "btn", text: "Add anyway", disabled: ui.busy,
+            onclick: function () { decide(held.item_id, "add", held.quantity); }
+          })
+        ]);
+      })));
+    }
+
     if (state.unsure.length) {
       nodes.push(el("div", { class: "section-title", text: "Not enough history to call" }));
       nodes.push(el("div", { class: "card tight" }, state.unsure.slice(0, 12).map(function (est) {
@@ -293,7 +313,15 @@
         el("div", { class: "grow" }, [
           el("div", { class: "name" }, [
             el("span", { text: item.name }),
-            item.paused ? el("span", { class: "pill quiet", text: "off" }) : null
+            item.paused ? el("span", { class: "pill quiet", text: "off" }) : null,
+            item.preferred_slot
+              ? el("span", {
+                  class: "pill soon",
+                  title: item.slot_pinned ? "Pinned to this delivery"
+                                          : "Learned from what you buy",
+                  text: item.preferred_slot.slice(0, 3)
+                })
+              : null
           ]),
           el("div", {
             class: "meta",

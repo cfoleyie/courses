@@ -52,6 +52,45 @@ once can still be suggested, marked as a low-confidence guess. Something bought
 once that *isn't* a known staple is never suggested at all; it sits under "not
 enough history to call", because one purchase of birthday candles is not a habit.
 
+### Which delivery something belongs to
+
+Steak and beer go in the Friday order for the weekend. Chicken goes in the
+Monday one for midweek. Nothing in the interval arithmetic can see that: both
+are purchases a week apart, and the day of the week never enters into it.
+
+Left alone this goes wrong in a specific, annoying way. A steak bought every
+Friday comes due on a Friday, so the "will it last until the delivery after
+this one" rule puts it on **Monday's** list every single week. It is not needed
+on Monday. It is needed on Friday, and Friday's van arrives in time.
+
+So Trolley also learns the day. Four or more purchases with three quarters of
+them, weighted towards recent ones, falling on the same weekday counts as a
+habit. Things bought in every order, like milk and bread, land near an even
+split and get no preference, which is correct: they belong in both.
+
+An item with a day of its own is held back when the order being planned is not
+its day, and appears under **Waiting for their usual delivery** so you can see
+it was considered rather than forgotten. There is an "Add anyway" button, and
+taking it is self-correcting: the purchase gets recorded on that day and the
+habit shifts on its own.
+
+A learned day gives way to genuinely running out. If the steak ran out a
+fortnight ago, waiting for Friday is worse than buying it midweek, so it is
+suggested anyway. If that is not what you want, say so once:
+
+```bash
+trolley slot steak friday    # weekend thing, and I mean it
+trolley slot steak any       # never hold this back
+trolley slot steak auto      # go back to working it out
+trolley slot steak           # what does it currently think?
+```
+
+A pinned day is obeyed unconditionally. The **Items** tab shows the day each
+thing belongs to as a small tag, so you can see what it has worked out.
+
+Turn the whole idea off with `slot_awareness = false` under `[suggest]`. A day
+you pinned by hand still applies.
+
 ### Brands
 
 This is the part that quietly breaks the naive version. The receipt says *Tesco

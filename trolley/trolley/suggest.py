@@ -11,7 +11,7 @@ from .catalogue import prior_interval
 from .config import Config
 from .db import Database
 from .model import Estimate, Status, Suggestion
-from .slots import Slot, planning_window
+from .slots import WEEKDAYS, Slot, next_by_weekday, planning_window, upcoming
 
 
 @dataclass(frozen=True, slots=True)
@@ -21,6 +21,8 @@ class Report:
     slot: Slot
     horizon: Slot
     suggestions: tuple[Suggestion, ...]
+    #: Due soon, but held back for the delivery they are usually bought in.
+    deferred: tuple[Suggestion, ...]
     #: Items whose history is too thin to suggest, kept for the "not sure" list.
     unsure: tuple[Estimate, ...]
     already_listed: tuple[int, ...]
@@ -39,10 +41,23 @@ def _now(config: Config, now: datetime | None = None) -> datetime:
 def estimates(db: Database, config: Config, today: date) -> list[Estimate]:
     """The engine's view of every item currently known."""
     grouped = db.purchases_by_item()
+    rules = config.suggest
+    # Setting the bar past any achievable count switches slot learning off,
+    # while still honouring a slot the user pinned by hand.
+    minimum = rules.slot_min_purchases if rules.slot_awareness else 10**6
     out = []
     for item in db.items():
         prior = config.intervals.get(item.key, prior_interval(item.key))
-        out.append(predict.estimate(item, grouped.get(item.id, []), today, prior))
+        out.append(
+            predict.estimate(
+                item,
+                grouped.get(item.id, []),
+                today,
+                prior,
+                slot_min_purchases=minimum,
+                slot_threshold=rules.slot_threshold,
+            )
+        )
     return out
 
 
@@ -61,13 +76,27 @@ def build(db: Database, config: Config, now: datetime | None = None) -> Report |
     listed = {entry["item_id"] for entry in db.list_for(slot.day)}
     rules = config.suggest
 
+    # When each weekday's delivery next comes round, so an item with a usual
+    # day can be asked whether it can wait for it.
+    schedule = next_by_weekday(
+        upcoming(config.slot_specs, moment, count=max(len(config.slots) * 2, 4),
+                 tz=config.server.timezone)
+    )
+    slot_weekday = WEEKDAYS[slot.day.weekday()]
+
     suggestions: list[Suggestion] = []
+    deferred: list[Suggestion] = []
     unsure: list[Estimate] = []
     for est in estimates(db, config, today):
         if est.item.id in listed:
             continue
         suggestion = predict.assess(
-            est, today=today, slot_date=slot.day, horizon_date=horizon.day
+            est,
+            today=today,
+            slot_date=slot.day,
+            horizon_date=horizon.day,
+            slot_weekday=slot_weekday,
+            own_slot_date=schedule.get(est.preferred_slot or ""),
         )
         if suggestion is None:
             # Worth showing separately: bought before, but not predictable yet.
@@ -79,15 +108,17 @@ def build(db: Database, config: Config, now: datetime | None = None) -> Report |
         if est.confidence < rules.min_confidence or suggestion.score < rules.min_score:
             unsure.append(est)
             continue
-        suggestions.append(suggestion)
+        (deferred if suggestion.deferred_to else suggestions).append(suggestion)
 
     suggestions.sort(key=lambda s: (-s.score, s.item.name))
+    deferred.sort(key=lambda s: (-s.score, s.item.name))
     unsure.sort(key=lambda e: e.item.name)
 
     return Report(
         slot=slot,
         horizon=horizon,
         suggestions=tuple(suggestions[: rules.max_suggestions]),
+        deferred=tuple(deferred),
         unsure=tuple(unsure),
         already_listed=tuple(sorted(listed)),
         generated_at=moment,
@@ -140,6 +171,12 @@ def render_text(report: Report) -> str:
     """The list as plain text, for a notification or the clipboard."""
     when = report.slot.at.strftime("%A %-d %B")
     if not report.suggestions:
+        if report.deferred:
+            held = ", ".join(suggestion.item.name for suggestion in report.deferred)
+            return (
+                f"{report.slot.label} ({when}): nothing looks due. "
+                f"Waiting for their usual delivery: {held}."
+            )
         return f"{report.slot.label} ({when}): nothing looks due."
 
     lines = [f"{report.slot.label} ({when}) — {len(report.suggestions)} to consider:"]
@@ -147,4 +184,7 @@ def render_text(report: Report) -> str:
         mark = {"overdue": "!", "due": "*", "soon": "-"}[suggestion.status.value]
         quantity = f" x{suggestion.quantity:g}" if suggestion.quantity > 1 else ""
         lines.append(f" {mark} {suggestion.item.name}{quantity} — {suggestion.reason}")
+    if report.deferred:
+        held = ", ".join(suggestion.item.name for suggestion in report.deferred)
+        lines.append(f"Waiting for their usual delivery: {held}.")
     return "\n".join(lines)

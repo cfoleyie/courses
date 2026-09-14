@@ -213,3 +213,39 @@ def test_setup_mail_writes_nothing_when_the_server_refuses(tmp_path, monkeypatch
     assert "[mailbox]" not in config.read_text()
     assert not (tmp_path / ".env").exists()
     assert "rejected" in capsys.readouterr().out
+
+
+def test_slot_reports_and_pins_the_delivery_day(config_file, tmp_path, capsys) -> None:
+    from datetime import date, timedelta
+
+    run(config_file, "demo", "--weeks", "2")
+    capsys.readouterr()
+
+    # Eight Fridays of steak is a habit anyone can see.
+    for week in range(8):
+        friday = date.today() - timedelta(days=7 * week)
+        while friday.weekday() != 4:
+            friday -= timedelta(days=1)
+        run(config_file, "add", "Tesco Irish Striploin Steak", "--date", friday.isoformat())
+    capsys.readouterr()
+
+    assert run(config_file, "slot", "steak") == 0
+    assert "friday" in capsys.readouterr().out
+
+    assert run(config_file, "slot", "steak", "any") == 0
+    assert "whichever delivery is next" in capsys.readouterr().out
+
+    assert run(config_file, "slot", "steak", "auto") == 0
+    assert "back to learning" in capsys.readouterr().out
+
+
+def test_slot_refuses_a_day_that_is_not_one(config_file, capsys) -> None:
+    run(config_file, "add", "Tesco Irish Striploin Steak")
+    capsys.readouterr()
+    assert run(config_file, "slot", "steak", "funday") == 1
+    assert "expected a weekday" in capsys.readouterr().err
+
+
+def test_slot_says_when_it_does_not_know_the_item(config_file, capsys) -> None:
+    assert run(config_file, "slot", "pomegranate molasses", "friday") == 1
+    assert "no item matching" in capsys.readouterr().err
