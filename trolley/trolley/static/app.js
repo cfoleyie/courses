@@ -62,16 +62,27 @@
     return d.toLocaleDateString(undefined, { day: "numeric", month: "short" });
   }
 
-  function relativeDays(iso) {
-    if (!iso) return "";
+  function daysUntil(iso) {
     var target = new Date(iso + "T00:00:00");
     var today = new Date();
     today.setHours(0, 0, 0, 0);
-    var days = Math.round((target - today) / 86400000);
+    return Math.round((target - today) / 86400000);
+  }
+
+  function relativeDays(iso) {
+    if (!iso) return "";
+    var days = daysUntil(iso);
     if (days === 0) return "today";
     if (days === 1) return "tomorrow";
     if (days === -1) return "yesterday";
     return days < 0 ? Math.abs(days) + " days ago" : "in " + days + " days";
+  }
+
+  /* "runs out 31 days ago" is not a sentence, so the verb follows the date. */
+  function runsOut(iso) {
+    if (!iso) return "";
+    var days = daysUntil(iso);
+    return (days < 0 ? "ran out " : "runs out ") + relativeDays(iso);
   }
 
   // ---------- data ----------
@@ -154,7 +165,7 @@
       el("div", {
         class: "meta",
         text: "Bought " + suggestion.purchases + " times, last on " + shortDay(suggestion.last_bought) +
-              " · runs out " + relativeDays(suggestion.due_on)
+              " · " + runsOut(suggestion.due_on)
       }),
       el("div", { class: "actions" }, [
         el("button", {
