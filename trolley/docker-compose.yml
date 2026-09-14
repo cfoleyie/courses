@@ -12,6 +12,7 @@ services:
       - ./inbox:/app/inbox:ro
     environment:
       # Populated from a .env file beside this compose file.
+      TROLLEY_IMAP_PASSWORD: ${TROLLEY_IMAP_PASSWORD:-}
       TROLLEY_SMTP_PASSWORD: ${TROLLEY_SMTP_PASSWORD:-}
       TROLLEY_NTFY_TOKEN: ${TROLLEY_NTFY_TOKEN:-}
       TZ: Europe/Dublin

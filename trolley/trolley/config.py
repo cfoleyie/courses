@@ -69,10 +69,35 @@ class NotifyConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class MailboxConfig:
+    """Where to find order emails, so nothing has to be imported by hand."""
+
+    enabled: bool = False
+    host: str = ""
+    port: int = 993
+    username: str = ""
+    folder: str = "INBOX"
+    #: IMAP search terms narrowing the folder to grocery mail. Anything the
+    #: parser cannot read is skipped, so this only has to be roughly right.
+    search: str = 'FROM "tesco"'
+    #: How far back to read the first time. After that only new mail is fetched.
+    backfill_days: int = 730
+    #: How often to look. Order emails are not urgent; the reminder is what is.
+    poll_seconds: int = 900
+    #: Mark messages read once imported. Off by default: it is your inbox.
+    mark_seen: bool = False
+
+    @property
+    def password(self) -> str:
+        return os.environ.get("TROLLEY_IMAP_PASSWORD", "")
+
+
+@dataclass(frozen=True, slots=True)
 class Config:
     server: ServerConfig = field(default_factory=ServerConfig)
     suggest: SuggestConfig = field(default_factory=SuggestConfig)
     notify: NotifyConfig = field(default_factory=NotifyConfig)
+    mailbox: MailboxConfig = field(default_factory=MailboxConfig)
     slots: tuple[SlotSpec, ...] = (
         SlotSpec(day="monday", at="08:00", label="Monday delivery"),
         SlotSpec(day="friday", at="08:00", label="Friday delivery"),
@@ -120,6 +145,7 @@ def parse_config(data: dict[str, Any]) -> Config:
         server=_build(ServerConfig, _section(data, "server"), "server"),
         suggest=_build(SuggestConfig, _section(data, "suggest"), "suggest"),
         notify=_build(NotifyConfig, _section(data, "notify"), "notify"),
+        mailbox=_build(MailboxConfig, _section(data, "mailbox"), "mailbox"),
         slots=tuple(slots) if slots else Config().slots,
         aliases={str(k).casefold(): str(v) for k, v in _section(data, "aliases").items()},
         intervals={str(k): float(v) for k, v in _section(data, "intervals").items()},
@@ -128,6 +154,20 @@ def parse_config(data: dict[str, Any]) -> Config:
         raise ConfigError("notify.channel = 'ntfy' needs notify.ntfy_topic")
     if config.notify.enabled and config.notify.channel == "smtp" and not config.notify.smtp_to:
         raise ConfigError("notify.channel = 'smtp' needs notify.smtp_to")
+    if config.mailbox.enabled:
+        missing = [
+            name
+            for name in ("host", "username")
+            if not getattr(config.mailbox, name)
+        ]
+        if missing:
+            raise ConfigError(
+                "[mailbox] is enabled but missing: " + ", ".join(f"mailbox.{m}" for m in missing)
+            )
+        if not config.mailbox.password:
+            raise ConfigError(
+                "[mailbox] is enabled but TROLLEY_IMAP_PASSWORD is not set in the environment"
+            )
     return config
 
 

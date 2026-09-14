@@ -20,6 +20,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from . import ingest as ingest_module
+from . import mailbox as mailbox_module
 from . import notify, suggest
 from .config import Config, load_config
 from .db import Database
@@ -32,6 +33,10 @@ STATIC_DIR = Path(__file__).parent / "static"
 
 #: How often the background task checks whether a slot's reminder is due.
 TICK_SECONDS = 300
+
+#: Back off to this after a mailbox failure, so a wrong password does not
+#: hammer the mail server every fifteen minutes.
+MAILBOX_RETRY_SECONDS = 1800
 
 
 class DecideBody(BaseModel):
@@ -98,15 +103,20 @@ def build_app(config: Config | None = None, *, db: Database | None = None) -> Fa
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        task = asyncio.create_task(_reminder_loop(store, config))
+        tasks = [
+            asyncio.create_task(_reminder_loop(store, config)),
+            asyncio.create_task(_mailbox_loop(store, config)),
+        ]
         try:
             yield
         finally:
-            task.cancel()
-            try:
-                await task
-            except asyncio.CancelledError:
-                pass
+            for task in tasks:
+                task.cancel()
+            for task in tasks:
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
 
     app = FastAPI(title="Trolley", version="0.1.0", lifespan=lifespan)
 
@@ -216,6 +226,31 @@ def build_app(config: Config | None = None, *, db: Database | None = None) -> Fa
     def orders() -> dict[str, Any]:
         return {"orders": store.orders()}
 
+    @app.get("/api/mailbox")
+    def mailbox_status() -> dict[str, Any]:
+        """Whether the mailbox watcher is on, and how it last got on."""
+        return {
+            "enabled": config.mailbox.enabled,
+            "host": config.mailbox.host,
+            "folder": config.mailbox.folder,
+            "search": config.mailbox.search,
+            "poll_seconds": config.mailbox.poll_seconds,
+            "last_run": store.get_state("mailbox:last_run"),
+            "last_result": store.get_state("mailbox:last_result"),
+            "last_error": store.get_state("mailbox:last_error"),
+        }
+
+    @app.post("/api/mailbox/check")
+    async def mailbox_check() -> dict[str, Any]:
+        """Read the mailbox now rather than waiting for the next poll."""
+        if not config.mailbox.enabled:
+            raise HTTPException(400, "[mailbox] is not enabled in the config")
+        try:
+            result = await asyncio.to_thread(mailbox_module.collect, store, config)
+        except mailbox_module.MailboxError as exc:
+            raise HTTPException(502, str(exc)) from exc
+        return {"ok": True, "summary": result.summary()}
+
     @app.post("/api/import")
     def import_text(body: ImportBody = Body(...)) -> dict[str, Any]:
         """Import a receipt pasted into the browser."""
@@ -278,6 +313,33 @@ async def _reminder_loop(store: Database, config: Config) -> None:
         except Exception:  # pragma: no cover - a bad channel must not kill the app
             _LOG.exception("reminder check failed")
         await asyncio.sleep(TICK_SECONDS)
+
+
+async def _mailbox_loop(store: Database, config: Config) -> None:
+    """Poll the mailbox for new order emails, for as long as the server runs."""
+    if not config.mailbox.enabled:
+        return
+    while True:
+        delay = config.mailbox.poll_seconds
+        try:
+            result = await asyncio.to_thread(mailbox_module.collect, store, config)
+            store.set_state("mailbox:last_run", datetime.now().isoformat(timespec="seconds"))
+            store.set_state("mailbox:last_result", result.summary())
+            store.set_state("mailbox:last_error", "")
+            if result.receipts:
+                _LOG.info("mailbox: %s", result.summary())
+        except asyncio.CancelledError:
+            raise
+        except mailbox_module.MailboxError as exc:
+            # Usually a wrong password or a renamed folder: worth saying once
+            # per retry rather than every poll, and worth slowing down for.
+            _LOG.warning("mailbox: %s", exc)
+            store.set_state("mailbox:last_error", str(exc))
+            delay = max(delay, MAILBOX_RETRY_SECONDS)
+        except Exception:  # pragma: no cover - never kill the server for this
+            _LOG.exception("mailbox check failed")
+            delay = max(delay, MAILBOX_RETRY_SECONDS)
+        await asyncio.sleep(delay)
 
 
 async def _maybe_notify(store: Database, config: Config, now: datetime | None = None) -> bool:

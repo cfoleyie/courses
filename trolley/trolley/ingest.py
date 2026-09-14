@@ -14,7 +14,7 @@ from . import normalise
 from .catalogue import display
 from .config import Config
 from .db import Database
-from .model import ParsedOrder
+from .model import ParsedOrder, Stage
 
 
 @dataclass
@@ -36,6 +36,7 @@ class IngestResult:
     added: int = 0
     duplicates: int = 0
     skipped_orders: int = 0
+    replaced_orders: int = 0
     dry_run: bool = False
     new_items: list[str] = field(default_factory=list)
     matches: list[Match] = field(default_factory=list)
@@ -50,6 +51,8 @@ class IngestResult:
             parts = [plural(self.orders, "order"), f"{plural(self.added, 'purchase')} recorded"]
             if self.duplicates:
                 parts.append(f"{self.duplicates} already known")
+        if self.replaced_orders:
+            parts.append(f"{plural(self.replaced_orders, 'order')} updated from a later email")
         if self.skipped_orders:
             parts.append(f"{plural(self.skipped_orders, 'order')} already imported")
         if self.new_items:
@@ -74,11 +77,21 @@ def ingest(
     result = IngestResult(dry_run=dry_run)
     known: set[str] = {item.key for item in db.items()}
 
-    for order in sorted(orders, key=lambda o: o.bought_on):
+    # Oldest first, and within a day the earliest stage first, so a receipt is
+    # always applied after the confirmation it supersedes.
+    for order in sorted(orders, key=lambda o: (o.bought_on, int(o.stage))):
         ref = order.order_ref
-        if ref and not force and db.order_seen(ref):
-            result.skipped_orders += 1
-            continue
+        if ref and not force:
+            seen_stage = db.order_stage(ref)
+            if seen_stage is not None:
+                if int(order.stage) <= seen_stage:
+                    result.skipped_orders += 1
+                    continue
+                # A later email for the same order: what actually turned up
+                # beats what was ordered, so replace rather than add to it.
+                if not dry_run:
+                    db.clear_order_purchases(ref)
+                result.replaced_orders += 1
         result.orders += 1
 
         for line in order.lines:
@@ -124,7 +137,7 @@ def ingest(
                 result.duplicates += 1
 
         if not dry_run and ref:
-            db.record_order(ref, order.bought_on, order.source, len(order.lines))
+            db.record_order(ref, order.bought_on, order.source, len(order.lines), int(order.stage))
 
     return result
 

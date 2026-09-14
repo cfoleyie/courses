@@ -9,6 +9,7 @@ from datetime import date, datetime
 from pathlib import Path
 
 from . import ingest as ingest_module
+from . import mailbox as mailbox_module
 from . import notify, suggest
 from .config import Config, ConfigError, load_config
 from .db import Database
@@ -169,6 +170,43 @@ def cmd_notify(args: argparse.Namespace, config: Config) -> int:
     return 0
 
 
+def cmd_mail(args: argparse.Namespace, config: Config) -> int:
+    """Read order emails from the configured mailbox."""
+    if not config.mailbox.enabled:
+        print(
+            "[mailbox] is not enabled. Add a [mailbox] section to your config "
+            "(see config.example.toml) and set TROLLEY_IMAP_PASSWORD.",
+            file=sys.stderr,
+        )
+        return 1
+
+    box = mailbox_module.Mailbox(config.mailbox)
+    db = _store(config)
+    try:
+        if args.test:
+            print(box.check())
+            return 0
+        if args.reset:
+            mailbox_module.reset_position(db)
+            print("forgot where it got to; the next read starts from the beginning")
+
+        runner = mailbox_module.collect_all if args.all else mailbox_module.collect
+        result = runner(db, config, mailbox=box, dry_run=args.dry_run)
+    except mailbox_module.MailboxError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+
+    print(result.summary())
+    if result.reset:
+        print("(the mailbox was renumbered by the server, so it was re-read)")
+    if args.dry_run or args.verbose:
+        for match in result.ingest.matches:
+            print(f"    {match.quantity:>4g}  {match.raw_name[:52]:54} -> {match.item_name} [{match.how}]")
+    if args.dry_run:
+        print("\nNothing was written. Re-run without --dry-run to keep it.")
+    return 0
+
+
 def cmd_demo(args: argparse.Namespace, config: Config) -> int:
     db = _store(config)
     orders = FakeImporter().generate(weeks=args.weeks)
@@ -220,6 +258,13 @@ def build_parser() -> argparse.ArgumentParser:
     link.add_argument("raw_name", help='the product name as it appears on receipts')
     link.add_argument("item_key", help='the item key, e.g. "toilet-roll"')
     link.set_defaults(func=cmd_link)
+
+    mail = subparsers.add_parser("mail", help="read order emails from the configured mailbox")
+    mail.add_argument("--test", action="store_true", help="check the settings without importing")
+    mail.add_argument("--dry-run", action="store_true", help="show what would be imported")
+    mail.add_argument("--all", action="store_true", help="keep going until the mailbox is caught up")
+    mail.add_argument("--reset", action="store_true", help="re-read from the beginning")
+    mail.set_defaults(func=cmd_mail)
 
     notify_cmd = subparsers.add_parser("notify", help="send the reminder now")
     notify_cmd.add_argument("--force", action="store_true", help="send even if nothing is due")

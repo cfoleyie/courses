@@ -115,3 +115,19 @@ def test_a_broken_config_is_reported_rather_than_crashing(tmp_path, capsys) -> N
     bad.write_text('[server]\ndatabse = "x"\n')
     assert main(["--config", str(bad), "suggest"]) == 2
     assert "config error" in capsys.readouterr().err
+
+
+def test_mail_says_what_to_do_when_it_is_not_set_up(config_file, capsys) -> None:
+    assert run(config_file, "mail") == 1
+    assert "[mailbox] is not enabled" in capsys.readouterr().err
+
+
+def test_mail_reports_a_connection_problem_without_a_traceback(tmp_path, capsys, monkeypatch) -> None:
+    monkeypatch.setenv("TROLLEY_IMAP_PASSWORD", "secret")
+    path = tmp_path / "config.toml"
+    path.write_text(
+        f'[server]\ndatabase = "{tmp_path / "trolley.db"}"\n'
+        '[mailbox]\nenabled = true\nhost = "imap.invalid.test"\nusername = "a@b.test"\n'
+    )
+    assert main(["--config", str(path), "mail", "--test"]) == 1
+    assert "imap.invalid.test" in capsys.readouterr().err

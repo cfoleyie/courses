@@ -4,7 +4,7 @@
 (function () {
   "use strict";
 
-  var state = { slot: null, horizon: null, suggestions: [], unsure: [], list: [], items: [] };
+  var state = { slot: null, horizon: null, suggestions: [], unsure: [], list: [], items: [], mailbox: null };
   var ui = { tab: "suggest", busy: false, paste: "", matches: null, dry: true };
   var REFRESH_MS = 120000;
 
@@ -97,6 +97,13 @@
     }).catch(function (error) { toast(error.message, true); });
   }
 
+  function loadMailbox() {
+    return api("/api/mailbox").then(function (data) {
+      state.mailbox = data;
+      render();
+    }).catch(function () { /* the panel is optional */ });
+  }
+
   function loadItems() {
     return api("/api/items").then(function (data) {
       state.items = data.items;
@@ -145,7 +152,9 @@
         class: ui.tab === def[0] ? "on" : "",
         onclick: function () {
           ui.tab = def[0];
-          if (def[0] === "items" && !state.items.length) loadItems(); else render();
+          if (def[0] === "items" && !state.items.length) loadItems();
+          else if (def[0] === "import" && !state.mailbox) loadMailbox();
+          else render();
         }
       }, [
         el("span", { text: def[1] }),
@@ -334,7 +343,52 @@
       });
     }
 
-    var nodes = [
+    var nodes = [];
+    if (state.mailbox && state.mailbox.enabled) {
+      nodes.push(el("div", { class: "section-title", text: "Watching your mailbox" }));
+      nodes.push(el("div", { class: "card" }, [
+        el("div", { class: "name" }, [
+          el("span", { text: state.mailbox.host }),
+          el("span", {
+            class: "pill " + (state.mailbox.last_error ? "overdue" : "soon"),
+            text: state.mailbox.last_error ? "problem" : "on"
+          })
+        ]),
+        el("div", {
+          class: "reason",
+          text: state.mailbox.last_error ||
+                (state.mailbox.last_result || "Waiting for the first check.")
+        }),
+        el("div", {
+          class: "meta",
+          text: state.mailbox.folder + " · " + state.mailbox.search +
+                " · every " + Math.round(state.mailbox.poll_seconds / 60) + " min" +
+                (state.mailbox.last_run ? " · last checked " + state.mailbox.last_run.replace("T", " ") : "")
+        }),
+        el("div", { class: "actions" }, [
+          el("button", {
+            class: "btn", text: "Check now", disabled: ui.busy,
+            onclick: function () {
+              ui.busy = true; render();
+              api("/api/mailbox/check", { method: "POST" }).then(function (result) {
+                ui.busy = false;
+                toast(result.summary);
+                state.items = [];
+                loadMailbox();
+                load();
+              }).catch(function (error) {
+                ui.busy = false;
+                toast(error.message, true);
+                loadMailbox();
+              });
+            }
+          })
+        ])
+      ]));
+      nodes.push(el("div", { class: "section-title", text: "Or paste one in" }));
+    }
+
+    nodes.push(
       el("div", { class: "card" }, [
         area,
         el("div", { class: "bar" }, [
@@ -343,7 +397,7 @@
         ]),
         el("div", { class: "meta", text: "Preview shows what each line was matched to without saving anything." })
       ])
-    ];
+    );
 
     if (ui.matches) {
       nodes.push(el("div", { class: "section-title", text: (ui.matches.dry_run ? "Preview" : "Imported") + " · " + dayName(ui.matches.bought_on) }));

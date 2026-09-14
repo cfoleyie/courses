@@ -35,6 +35,30 @@ include_soon = true
 nudge_step = 1.15
 nudge_max = 2.0
 
+# Watch a mailbox for order confirmations, so history keeps itself up to date
+# and nothing ever has to be imported by hand. The connection is outbound only:
+# nothing needs to be exposed to the internet for this to work from home.
+#
+# The password goes in TROLLEY_IMAP_PASSWORD, never here. For Gmail it must be
+# an app password from myaccount.google.com/apppasswords, not your normal one.
+[mailbox]
+enabled = false
+# host = "imap.gmail.com"
+# port = 993
+# username = "you@gmail.com"
+# Which folder to read. A Gmail label works, nested with a slash. Pointing this
+# at a label you filter Tesco mail into means the app never sees anything else.
+# folder = "INBOX"
+# IMAP search narrowing the folder to grocery mail. Anything the parser cannot
+# read is skipped, so this only has to be roughly right.
+# search = 'FROM "tesco"'
+# How far back to read the first time. After that, only new mail is fetched.
+# backfill_days = 730
+# How often to look. Order emails are not urgent; the reminder is what is.
+# poll_seconds = 900
+# Mark messages read once imported. Off by default: it is your inbox.
+# mark_seen = false
+
 [notify]
 enabled = false
 # How long before the delivery to send the list. 14 hours before an 8am slot

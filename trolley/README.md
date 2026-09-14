@@ -12,11 +12,11 @@ else.
 ## How it works
 
 ```
-order confirmation emails  ──►  purchase history (SQLite)  ──►  suggestions
-        ▲                              ▲                            │
-        └─ or CSV, or "I ordered       └─ your yes/no on each        ▼
-           these" in the app              suggestion          reminder the
-                                                              evening before
+your mailbox (IMAP, every 15 min)  ──►  purchase history  ──►  suggestions
+        ▲                                      ▲                    │
+        └─ or a file, a paste, a CSV,          └─ your yes/no        ▼
+           or "I ordered these"                   on each      reminder the
+                                                               evening before
 ```
 
 ### The question it asks
@@ -71,30 +71,77 @@ trolley link "Oatly Oat Drink Whole 1L" milk
 
 ## Getting your history in
 
-Tesco has no public API, so the history has to come from somewhere else. In
-rough order of how much work they are:
+### The short version
 
-**Order confirmation emails.** You have years of them. Save them out of your
-mail client (in Gmail: open one, ⋮ → *Download message*, which gives a `.eml`)
-into a folder and point Trolley at it:
+Point Trolley at the mailbox your Tesco confirmations land in and forget about
+it. Every fifteen minutes it reads anything new, and the order you placed this
+morning is in the history before the next list is built. Nothing to import,
+nothing to paste, nothing to remember.
+
+```toml
+[mailbox]
+enabled  = true
+host     = "imap.gmail.com"
+username = "you@gmail.com"
+folder   = "Tesco"
+search   = 'FROM "tesco"'
+```
+
+```bash
+export TROLLEY_IMAP_PASSWORD='your app password'
+trolley mail --test          # prove the settings work
+trolley mail --all           # read the back catalogue once
+trolley serve                # from here it keeps itself up to date
+```
+
+For Gmail that password must be a 16-character **app password** from
+[myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords),
+not your normal one. If the password is rejected, `trolley mail --test` says so
+in those words rather than making you guess.
+
+The connection is outbound only. Nothing has to be exposed to the internet, no
+port forwarding, no webhook, no third-party service holding your mail.
+
+**If you would rather not hand over your main mailbox**, this is where
+forwarding earns its keep: make a filter that auto-forwards Tesco mail to a
+separate free mail account, and point Trolley at that instead. It then only
+ever sees grocery email. The `folder` setting does a weaker version of the same
+thing — filter Tesco mail into a label and Trolley reads only that label.
+
+Progress is tracked by message UID, not by read/unread, so Trolley never
+touches your inbox to keep its place and reading mail on your phone does not
+hide it from the importer. `mark_seen = true` if you would rather it did mark
+them.
+
+### Which email it believes
+
+Tesco sends more than one email per order: a confirmation when you book, a
+notice if you amend it, and a receipt after the van has been. Only the last one
+knows what actually turned up, substitutions and all.
+
+Trolley reads all of them, keyed by order number, and a later email **replaces**
+the earlier one rather than being skipped or double-counted. If the toilet roll
+was out of stock, the confirmation's claim that you bought it is thrown away
+when the receipt arrives. That matters: an item you did not actually get should
+not reset its clock.
+
+### The other ways in
+
+You do not have to use the mailbox at all.
+
+**Files.** Save emails out of your mail client (in Gmail: open one, ⋮ →
+*Download message*) and point Trolley at the folder:
 
 ```bash
 trolley import ~/Downloads/tesco --dry-run   # see what it makes of them
 trolley import ~/Downloads/tesco             # keep it
 ```
 
-The parser does not depend on Tesco's markup, which changes: it looks for the
-shape every receipt has, a description with a quantity and a price, and ignores
-the delivery charges, Clubcard lines and totals around them. That is a
-heuristic, so **check it with `--dry-run` first** — it prints every line it found
-and what it matched each one to. `--show-text` prints the email as the parser
-sees it if something is being missed.
-
-You can also paste a single email into the **Import** tab in the web app, which
-has the same preview.
+**Paste one in.** The **Import** tab in the web app takes a single email, with
+the same preview.
 
 **CSV.** If your emails defeat the parser, any file with a date column and an
-item column will do, with optional quantity and order columns:
+item column will do:
 
 ```csv
 date,item,qty
@@ -102,12 +149,44 @@ date,item,qty
 2026-09-14,Tesco Semi Skimmed Milk,2
 ```
 
-**Just using it.** Tick things onto the list in the app and press *I ordered
-these*, and that is recorded as a purchase. Start from nothing and after three
-or four weeks it has enough to be useful on the staples you buy most.
+**Just using it.** Tick things onto the list and press *I ordered these*, and
+that is recorded as a purchase. Start from nothing and after three or four
+weeks it is useful on the staples you buy most.
 
-There is also `trolley add "Tesco Toilet Tissue 9 Roll" --date 14/09/2026` for
-filling in gaps by hand.
+### About the parser
+
+It does not depend on Tesco's markup, which changes: it looks for the shape
+every receipt has, a description with a quantity and a price, and ignores the
+delivery charges, Clubcard lines and totals around them. Marketing email is
+skipped rather than mangled.
+
+That is still a heuristic, so **check it once** with `trolley mail --dry-run`
+or `trolley import --dry-run`, which print every line found and what each was
+matched to. `trolley import --show-text` prints an email as the parser sees it
+if something is being missed.
+
+## Why not read it from the Tesco app?
+
+That was the first thing worth checking, and the answer is no, for reasons
+worth knowing.
+
+Tesco's public grocery API was retired years ago. The phone app talks to a
+private one that is not documented or supported for this, and using it would
+mean lifting the app's credentials and pretending to be it. Scraping the
+website while logged in as you is the other version of the same idea. Both
+would work for a while. Both break without warning whenever Tesco changes
+something, both are against the terms you agreed to, and a scraper that logs
+into your account is a password sitting on a machine at home waiting to be
+worth stealing.
+
+The confirmation emails carry the same information — what you bought, how much,
+when — and they are yours, already sitting in your mailbox, in a format nobody
+is going to change without also breaking their own customers' receipts. Reading
+them needs no account access and cannot touch your order.
+
+One thing the app is genuinely good for: if you want the full back catalogue
+rather than whatever is still in your mail, Tesco will give you your Clubcard
+purchase history on request, and that export can be fed in as CSV.
 
 ## Setting it up
 

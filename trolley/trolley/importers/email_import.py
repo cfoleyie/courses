@@ -21,7 +21,7 @@ from datetime import date, datetime
 from html.parser import HTMLParser
 from pathlib import Path
 
-from ..model import ParsedLine, ParsedOrder
+from ..model import ParsedLine, ParsedOrder, Stage
 from .base import ImportError_
 
 #: Lines that look like products but are really receipt furniture.
@@ -72,6 +72,19 @@ _LINE_TRAILING_QTY = re.compile(
 )
 _LINE_PRICE_ONLY = re.compile(
     r"^(?P<name>[A-Za-z][^£€$]{2,90}?)\s+[£€$]\s*\d{1,4}[.,]\d{2}\s*$"
+)
+
+#: Which email in an order's life this is. The subject line is the reliable
+#: signal, so it is matched leniently; the body only gets a strict second look,
+#: because a confirmation's footer happily talks about receipts and deliveries.
+_STAGE_SUBJECT: tuple[tuple[Stage, str], ...] = (
+    (Stage.DELIVERED, r"receipt|delivered|thanks for shopping"),
+    (Stage.AMENDED, r"amend|chang|updated"),
+    (Stage.BOOKED, r"confirm|thanks for your order|booked|we'?ve got your order"),
+)
+_STAGE_BODY: tuple[tuple[Stage, str], ...] = (
+    (Stage.DELIVERED, r"(has been|was) delivered|here'?s your receipt|thanks for shopping with us"),
+    (Stage.AMENDED, r"(you'?ve|you have) changed your order|your order has changed|amended order"),
 )
 
 _ORDER_REF = re.compile(
@@ -185,6 +198,27 @@ def find_order_ref(text: str) -> str | None:
     return None
 
 
+def find_stage(text: str) -> Stage:
+    """Which of an order's emails this is, so a later one can replace an earlier.
+
+    Getting this wrong in one direction is worse than the other: labelling a
+    confirmation as a receipt would block the real receipt from replacing it.
+    So the subject line decides where it can, and the body is only consulted
+    for phrases a confirmation would not use about itself.
+    """
+    subject, _, body = text.partition("\n")
+    subject = subject.casefold()
+    for stage, pattern in _STAGE_SUBJECT:
+        if re.search(pattern, subject):
+            return stage
+
+    head = body[:1500].casefold()
+    for stage, pattern in _STAGE_BODY:
+        if re.search(pattern, head):
+            return stage
+    return Stage.BOOKED
+
+
 def _looks_like_product(name: str) -> bool:
     lowered = name.casefold()
     if not _HAS_LETTERS.search(name) or len(name) < 3 or len(name) > 120:
@@ -265,6 +299,7 @@ def parse_receipt_text(text: str, fallback_date: date | None = None) -> ParsedOr
         lines=tuple(lines),
         order_ref=find_order_ref(text) or f"email:{bought_on.isoformat()}",
         source="email",
+        stage=find_stage(text),
     )
 
 

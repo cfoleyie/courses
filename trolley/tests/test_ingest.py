@@ -105,3 +105,43 @@ def test_relinking_leaves_an_item_that_still_has_other_history(db: Database, con
     relink(db, "Tesco Whole Milk 1L", "cream")
     assert db.item_by_key("milk") is not None
     assert len(db.purchases(db.item_by_key("milk").id)) == 1
+
+
+def test_a_delivery_receipt_replaces_the_confirmation(db: Database, config: Config) -> None:
+    """Substitutions mean the receipt, not the confirmation, is the truth."""
+    from trolley.model import Stage
+
+    def staged(stage: Stage, *names: str) -> ParsedOrder:
+        return ParsedOrder(
+            bought_on=date(2026, 9, 1),
+            lines=tuple(ParsedLine(raw_name=name) for name in names),
+            order_ref="ORD-1",
+            source="email",
+            stage=stage,
+        )
+
+    ingest(db, [staged(Stage.BOOKED, "Tesco Semi Skimmed Milk 2L", "Tesco Toilet Tissue 9 Roll")], config)
+    later = ingest(db, [staged(Stage.DELIVERED, "Tesco Semi Skimmed Milk 2L", "Tesco Bananas Loose")], config)
+
+    assert later.replaced_orders == 1
+    assert {db.item(p.item_id).key for p in db.purchases()} == {"milk", "bananas"}
+
+
+def test_emails_arriving_out_of_order_still_end_up_right(db: Database, config: Config) -> None:
+    from trolley.model import Stage
+
+    def staged(stage: Stage, *names: str) -> ParsedOrder:
+        return ParsedOrder(
+            bought_on=date(2026, 9, 1),
+            lines=tuple(ParsedLine(raw_name=name) for name in names),
+            order_ref="ORD-1",
+            source="email",
+            stage=stage,
+        )
+
+    # Both in one batch, receipt listed first: the sort puts them right.
+    ingest(db, [
+        staged(Stage.DELIVERED, "Tesco Semi Skimmed Milk 2L"),
+        staged(Stage.BOOKED, "Tesco Semi Skimmed Milk 2L", "Tesco Toilet Tissue 9 Roll"),
+    ], config)
+    assert {db.item(p.item_id).key for p in db.purchases()} == {"milk"}

@@ -93,6 +93,19 @@ class ParsedLine:
     price: float | None = None
 
 
+class Stage(int, Enum):
+    """Tesco sends several emails per order, and the later ones are better.
+
+    The confirmation says what was ordered; the receipt after delivery says
+    what actually turned up, substitutions and all. A later stage for an order
+    already imported replaces it rather than being skipped or double-counted.
+    """
+
+    BOOKED = 1  #: "Thanks for your order" / order confirmation.
+    AMENDED = 2  #: The order was changed before the cut-off.
+    DELIVERED = 3  #: The receipt after the van has been: what was really got.
+
+
 @dataclass(frozen=True, slots=True)
 class ParsedOrder:
     """A whole receipt, as read from an email or a spreadsheet."""
@@ -101,3 +114,4 @@ class ParsedOrder:
     lines: tuple[ParsedLine, ...] = field(default_factory=tuple)
     order_ref: str | None = None
     source: str = "import"
+    stage: Stage = Stage.BOOKED

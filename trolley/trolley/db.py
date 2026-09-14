@@ -57,7 +57,9 @@ CREATE TABLE IF NOT EXISTS orders (
     bought_on   TEXT NOT NULL,
     source      TEXT NOT NULL,
     lines       INTEGER NOT NULL DEFAULT 0,
-    imported_at TEXT NOT NULL
+    imported_at TEXT NOT NULL,
+    -- Which of the order's emails this came from; see model.Stage.
+    stage       INTEGER NOT NULL DEFAULT 1
 );
 
 -- What has been ticked onto the list for an upcoming delivery.
@@ -85,6 +87,12 @@ CREATE TABLE IF NOT EXISTS state (
     value TEXT NOT NULL
 );
 """
+
+
+#: (table, column, definition) for columns added after the first release.
+MIGRATIONS: tuple[tuple[str, str, str], ...] = (
+    ("orders", "stage", "INTEGER NOT NULL DEFAULT 1"),
+)
 
 
 def _as_date(value: Any) -> date | None:
@@ -128,6 +136,20 @@ class Database:
             self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.connect() as conn:
             conn.executescript(SCHEMA)
+            self._migrate(conn)
+
+    @staticmethod
+    def _migrate(conn: sqlite3.Connection) -> None:
+        """Add columns that later versions introduced.
+
+        `CREATE TABLE IF NOT EXISTS` does nothing to a table that already
+        exists, so a database made by an earlier version would otherwise be
+        missing the new column and fail on the next write.
+        """
+        for table, column, definition in MIGRATIONS:
+            existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
+            if column not in existing:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
     @contextmanager
     def connect(self) -> Iterator[sqlite3.Connection]:
@@ -244,23 +266,39 @@ class Database:
     # ----- orders -------------------------------------------------------
 
     def order_seen(self, ref: str) -> bool:
-        with self.connect() as conn:
-            return conn.execute("SELECT 1 FROM orders WHERE ref = ?", (ref,)).fetchone() is not None
+        return self.order_stage(ref) is not None
 
-    def record_order(self, ref: str, bought_on: date, source: str, lines: int) -> None:
+    def order_stage(self, ref: str) -> int | None:
+        """Which email this order was last imported from, or None if unseen."""
+        with self.connect() as conn:
+            row = conn.execute("SELECT stage FROM orders WHERE ref = ?", (ref,)).fetchone()
+        return row["stage"] if row else None
+
+    def record_order(
+        self, ref: str, bought_on: date, source: str, lines: int, stage: int = 1
+    ) -> None:
         with self.connect() as conn:
             conn.execute(
-                """INSERT INTO orders (ref, bought_on, source, lines, imported_at)
-                   VALUES (?, ?, ?, ?, ?) ON CONFLICT(ref) DO UPDATE SET
-                       lines = excluded.lines, imported_at = excluded.imported_at""",
+                """INSERT INTO orders (ref, bought_on, source, lines, imported_at, stage)
+                   VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(ref) DO UPDATE SET
+                       bought_on   = excluded.bought_on,
+                       lines       = excluded.lines,
+                       imported_at = excluded.imported_at,
+                       stage       = excluded.stage""",
                 (
                     ref,
                     bought_on.isoformat(),
                     source,
                     lines,
                     datetime.now().isoformat(timespec="seconds"),
+                    int(stage),
                 ),
             )
+
+    def clear_order_purchases(self, ref: str) -> int:
+        """Forget what an order contained, before importing a better version."""
+        with self.connect() as conn:
+            return conn.execute("DELETE FROM purchases WHERE order_ref = ?", (ref,)).rowcount
 
     def orders(self) -> list[dict[str, Any]]:
         with self.connect() as conn:
