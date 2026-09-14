@@ -122,9 +122,11 @@ def _friendly(error: Exception, config: MailboxConfig) -> MailboxError:
         if gmail:
             hint = (
                 "Google rejected the password. It must be a 16-character app password from "
-                "myaccount.google.com/apppasswords, not your normal Google password. App "
-                "passwords need 2-Step Verification turned on first, and IMAP must be enabled "
-                "under Gmail settings, See all settings, Forwarding and POP/IMAP"
+                "myaccount.google.com/apppasswords, not your normal Google password. If that "
+                "page says the setting is not available, 2-Step Verification is not on for "
+                "this account yet: turn it on at myaccount.google.com/signinoptions/twosv and "
+                "the app password option appears. Check the account switcher first if you are "
+                "signed in to more than one Google account"
             )
         else:
             hint = f"the password for {config.username} was rejected"

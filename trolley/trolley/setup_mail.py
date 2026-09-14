@@ -33,12 +33,18 @@ KNOWN_HOSTS: tuple[tuple[tuple[str, ...], str], ...] = (
 APP_PASSWORD_HELP = {
     "imap.gmail.com": (
         "Gmail needs an app password, not your normal one:\n"
-        "  1. Turn on 2-Step Verification if it is not already on.\n"
-        "  2. Go to myaccount.google.com/apppasswords and make one called Trolley.\n"
-        "  3. Google shows it as four groups of four. Paste it however you like;\n"
+        "  1. Turn on 2-Step Verification for THIS account, at\n"
+        "     myaccount.google.com/signinoptions/twosv. App passwords do not\n"
+        "     exist until it is on, and the page just says the setting is not\n"
+        "     available for your account.\n"
+        "  2. If you are signed in to more than one Google account, check the\n"
+        "     account switcher: it is easy to turn 2-Step Verification on for\n"
+        "     the wrong one.\n"
+        "  3. Go to myaccount.google.com/apppasswords and make one called Trolley.\n"
+        "  4. Google shows it as four groups of four. Paste it however you like;\n"
         "     the spaces are ignored.\n"
-        "  4. In Gmail, Settings, See all settings, Forwarding and POP/IMAP,\n"
-        "     make sure IMAP is enabled."
+        "Nothing needs enabling in Gmail itself: Google removed the IMAP toggle in\n"
+        "January 2025 and IMAP is now always on."
     ),
     "outlook.office365.com": (
         "Outlook needs an app password from account.microsoft.com/security if you\n"

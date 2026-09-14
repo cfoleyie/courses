@@ -117,19 +117,27 @@ delivery already knows about it.
 The host is `imap.gmail.com` and the setup command fills that in from your
 address. Two things trip people up, and both are handled:
 
-- **The password must be an app password**, not your Google password. Turn on
-  2-Step Verification, then make one at
+- **The password must be an app password**, not your Google password, and app
+  passwords do not exist until **2-Step Verification is on for that account**.
+  Until it is, the app passwords page just says "the setting you are looking
+  for is not available for your account", which does not hint at the cause.
+  Turn it on at
+  [myaccount.google.com/signinoptions/twosv](https://myaccount.google.com/signinoptions/twosv),
+  then make the password at
   [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords).
-  Google shows it as four groups of four; paste it exactly as shown, spaces and
-  all, because the spaces are presentation only and get stripped for you.
-  If Google refuses it, the error says which of these to check rather than just
-  "invalid credentials".
+  If you are signed in to several Google accounts, check the account switcher:
+  the `/u/2/` in the URL is an account index, and turning 2-Step Verification on
+  for the wrong account is an easy hour to lose.
+  Google shows the password as four groups of four; paste it exactly as shown,
+  spaces and all, because the spaces are presentation only and get stripped for
+  you.
 - **A Gmail folder is a label.** `INBOX` reads everything. If you filter Tesco
   mail into a label, name that label instead and Trolley never sees anything
   else. Nested labels use a slash, and a label with a space in it is fine.
 
-IMAP also has to be on: Gmail, Settings, See all settings, Forwarding and
-POP/IMAP.
+Nothing needs enabling in Gmail itself. Google removed the IMAP on/off setting
+in January 2025 and IMAP is always on now, so there is no toggle to go looking
+for.
 
 The password is written to a `.env` file beside the config, readable only by
 you, and never into the config file itself.
