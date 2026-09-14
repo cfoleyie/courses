@@ -41,11 +41,16 @@ nudge_max = 2.0
 #
 # The password goes in TROLLEY_IMAP_PASSWORD, never here. For Gmail it must be
 # an app password from myaccount.google.com/apppasswords, not your normal one.
+# The easiest way to fill this in is `trolley setup-mail`, which asks for each
+# of these, tests the connection, and writes the section for you.
 [mailbox]
 enabled = false
 # host = "imap.gmail.com"
 # port = 993
 # username = "you@gmail.com"
+# "ssl" for the usual port 993, "starttls" for 143, or "none" for a local
+# bridge such as Proton Bridge that is already on the loopback.
+# security = "ssl"
 # Which folder to read. A Gmail label works, nested with a slash. Pointing this
 # at a label you filter Tesco mail into means the app never sees anything else.
 # folder = "INBOX"

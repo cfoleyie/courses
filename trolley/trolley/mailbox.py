@@ -45,6 +45,23 @@ BATCH = 200
 
 IMAP_MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
 
+#: Folder names only need quoting when they are not a plain single word, which
+#: a Gmail label very often is not ("Tesco Orders", "Shopping/Tesco").
+_PLAIN_FOLDER = re.compile(r"^[A-Za-z0-9_./-]+$")
+
+
+def quote_folder(name: str) -> str:
+    """Quote a mailbox name for IMAP, because imaplib will not do it for you.
+
+    Without this, a label with a space in it is sent as two arguments and the
+    server rejects the whole command.
+    """
+    name = name or "INBOX"
+    if _PLAIN_FOLDER.match(name):
+        return name
+    escaped = name.replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{escaped}"' 
+
 
 class MailboxError(Exception):
     """The mailbox could not be read. The message says what to change."""
@@ -93,22 +110,39 @@ def imap_date(day: date) -> str:
 def _friendly(error: Exception, config: MailboxConfig) -> MailboxError:
     """Turn IMAP's terse failures into something that says what to do."""
     text = str(error)
-    if "AUTHENTICATIONFAILED" in text or "Invalid credentials" in text or "LOGIN failed" in text:
-        hint = (
-            "the password was rejected. If this is Gmail, TROLLEY_IMAP_PASSWORD must be "
-            "a 16-character app password from myaccount.google.com/apppasswords, not your "
-            "normal password, and IMAP must be enabled in Gmail settings"
+    gmail = "gmail" in config.host.casefold() or "googlemail" in config.host.casefold()
+
+    if "support.google.com/mail/accounts/answer/78754" in text or "log in via your web browser" in text:
+        return MailboxError(
+            "Google refused the sign-in. That message means the password was accepted as a "
+            "shape but not as an app password: generate one at "
+            "myaccount.google.com/apppasswords and use that as TROLLEY_IMAP_PASSWORD"
         )
+    if "AUTHENTICATIONFAILED" in text or "Invalid credentials" in text or "LOGIN failed" in text:
+        if gmail:
+            hint = (
+                "Google rejected the password. It must be a 16-character app password from "
+                "myaccount.google.com/apppasswords, not your normal Google password. App "
+                "passwords need 2-Step Verification turned on first, and IMAP must be enabled "
+                "under Gmail settings, See all settings, Forwarding and POP/IMAP"
+            )
+        else:
+            hint = f"the password for {config.username} was rejected"
         return MailboxError(f"{config.host}: {hint}")
     if isinstance(error, (socket.gaierror, socket.timeout, TimeoutError)):
         return MailboxError(f"could not reach {config.host}:{config.port} ({text})")
     if isinstance(error, ssl.SSLError):
         return MailboxError(f"TLS failed talking to {config.host}:{config.port} ({text})")
     if "NONEXISTENT" in text or "Unknown Mailbox" in text or "does not exist" in text.casefold():
+        extra = (
+            ' In Gmail a folder is a label: use the label exactly as it appears, nesting '
+            'with a slash ("Shopping/Tesco"), or "INBOX" for the inbox itself.'
+            if gmail
+            else ""
+        )
         return MailboxError(
             f"no folder called {config.folder!r} on {config.host}. "
-            "Folder names are case sensitive and Gmail labels nest with a slash, "
-            'for example "Tesco/Orders"'
+            f"Folder names are case sensitive.{extra}"
         )
     return MailboxError(f"{config.host}: {text}")
 
@@ -124,8 +158,16 @@ class Mailbox:
         self.config = config
         self._connect_factory = connect or self._default_connect
 
-    def _default_connect(self) -> ImapLike:  # pragma: no cover - needs a server
-        return imaplib.IMAP4_SSL(self.config.host, self.config.port, timeout=30)
+    def _default_connect(self) -> ImapLike:
+        """Open the connection the way this server expects to be talked to."""
+        host, port = self.config.host, self.config.port
+        if self.config.security == "none":
+            return imaplib.IMAP4(host, port, timeout=30)
+        if self.config.security == "starttls":
+            conn = imaplib.IMAP4(host, port, timeout=30)
+            conn.starttls(ssl.create_default_context())
+            return conn
+        return imaplib.IMAP4_SSL(host, port, timeout=30)
 
     @contextmanager
     def session(self, readonly: bool = True) -> Iterator[ImapLike]:
@@ -136,7 +178,7 @@ class Mailbox:
             raise _friendly(exc, config) from exc
         try:
             conn.login(config.username, config.password)
-            status, detail = conn.select(config.folder, readonly)
+            status, detail = conn.select(quote_folder(config.folder), readonly)
             if status != "OK":
                 # The server's own words usually name the problem ("NONEXISTENT"),
                 # so they go through the same translation as a raised error.
@@ -157,7 +199,7 @@ class Mailbox:
                 pass
 
     def uid_validity(self, conn: ImapLike) -> str:
-        status, data = conn.status(self.config.folder, "(UIDVALIDITY)")
+        status, data = conn.status(quote_folder(self.config.folder), "(UIDVALIDITY)")
         if status != "OK" or not data:
             return ""
         found = re.search(rb"UIDVALIDITY\s+(\d+)", data[0] or b"")

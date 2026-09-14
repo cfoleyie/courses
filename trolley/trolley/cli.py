@@ -170,6 +170,37 @@ def cmd_notify(args: argparse.Namespace, config: Config) -> int:
     return 0
 
 
+def cmd_setup_mail(args: argparse.Namespace, config: Config) -> int:
+    """Ask for the mailbox details, prove they work, then write them down."""
+    from dataclasses import replace
+
+    from . import setup_mail
+
+    # Anything given on the command line becomes the offered default, which is
+    # what makes this scriptable for a container or a second machine.
+    given = {
+        name: value
+        for name, value in (
+            ("username", args.username),
+            ("host", args.host),
+            ("port", args.port),
+            ("folder", args.folder),
+            ("search", args.search),
+            ("security", args.security),
+        )
+        if value
+    }
+    defaults = replace(config.mailbox, **given) if given else config.mailbox
+    path = Path(args.config).expanduser() if args.config else Path("config.toml")
+    return setup_mail.run(
+        config,
+        path,
+        _store(config),
+        defaults=defaults,
+        given=frozenset(given),
+    )
+
+
 def cmd_mail(args: argparse.Namespace, config: Config) -> int:
     """Read order emails from the configured mailbox."""
     if not config.mailbox.enabled:
@@ -258,6 +289,20 @@ def build_parser() -> argparse.ArgumentParser:
     link.add_argument("raw_name", help='the product name as it appears on receipts')
     link.add_argument("item_key", help='the item key, e.g. "toilet-roll"')
     link.set_defaults(func=cmd_link)
+
+    setup = subparsers.add_parser(
+        "setup-mail", help="connect a mailbox, test it, and save the settings"
+    )
+    setup.add_argument("--username", help="email address (otherwise you are asked)")
+    setup.add_argument("--host", help="IMAP host (otherwise guessed from the address)")
+    setup.add_argument("--port", type=int, help="IMAP port (default 993)")
+    setup.add_argument("--folder", help="folder or Gmail label to read")
+    setup.add_argument("--search", help='IMAP search, default FROM "tesco"')
+    setup.add_argument(
+        "--security", choices=("ssl", "starttls", "none"),
+        help="ssl for port 993, starttls for 143, none for a local bridge",
+    )
+    setup.set_defaults(func=cmd_setup_mail)
 
     mail = subparsers.add_parser("mail", help="read order emails from the configured mailbox")
     mail.add_argument("--test", action="store_true", help="check the settings without importing")

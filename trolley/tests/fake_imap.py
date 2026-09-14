@@ -44,11 +44,21 @@ class FakeIMAP:
         uidvalidity: str = "1000",
         fail_login: bool = False,
         fail_select: bool = False,
+        expect_password: str | None = None,
+        folders: tuple[str, ...] = (),
+        web_login_alert: bool = False,
     ) -> None:
         self.messages = dict(messages or {})
         self.uidvalidity = uidvalidity
         self.fail_login = fail_login
         self.fail_select = fail_select
+        #: When set, only this exact password is accepted, which is how the
+        #: Gmail app-password handling is checked.
+        self.expect_password = expect_password
+        #: When set, only these folder names can be selected.
+        self.folders = folders
+        self.web_login_alert = web_login_alert
+        self.password_seen: str | None = None
         self.logged_in = False
         self.selected: str | None = None
         self.readonly: bool | None = None
@@ -59,7 +69,15 @@ class FakeIMAP:
     # ----- the IMAP surface Mailbox uses -----
 
     def login(self, user: str, password: str):
-        if self.fail_login:
+        self.password_seen = password
+        if self.web_login_alert:
+            raise Exception(
+                "b'[ALERT] Please log in via your web browser: "
+                "https://support.google.com/mail/accounts/answer/78754 (Failure)'"
+            )
+        if self.fail_login or (
+            self.expect_password is not None and password != self.expect_password
+        ):
             raise Exception("b'[AUTHENTICATIONFAILED] Invalid credentials (Failure)'")
         self.logged_in = True
         return "OK", [b"LOGIN completed"]
@@ -67,6 +85,8 @@ class FakeIMAP:
     def select(self, mailbox: str, readonly: bool = True):
         if self.fail_select:
             return "NO", [b"[NONEXISTENT] Unknown Mailbox"]
+        if self.folders and mailbox not in self.folders:
+            return "NO", [b"[NONEXISTENT] Unknown Mailbox (Failure)"]
         self.selected, self.readonly = mailbox, readonly
         return "OK", [str(len(self.messages)).encode()]
 

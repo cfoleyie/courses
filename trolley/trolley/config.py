@@ -7,6 +7,7 @@ file, so the config can live in version control next to the rest of the setup.
 from __future__ import annotations
 
 import os
+import re
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -19,6 +20,20 @@ DEFAULT_CONFIG_PATHS = ("config.toml", "~/.config/trolley/config.toml", "/etc/tr
 
 class ConfigError(Exception):
     """The config file is present but cannot be used as written."""
+
+
+#: Google shows an app password as four groups of four, "abcd efgh ijkl mnop",
+#: and the spaces are presentation only. Pasting it as shown is the single most
+#: likely way to get a baffling "invalid credentials" on an otherwise correct
+#: setup, so that exact shape has its spaces removed.
+_APP_PASSWORD = re.compile(r"^([A-Za-z0-9]{4})\s+([A-Za-z0-9]{4})\s+([A-Za-z0-9]{4})\s+([A-Za-z0-9]{4})$")
+
+
+def clean_password(raw: str) -> str:
+    """Trim a password, and un-space a Google app password pasted as displayed."""
+    trimmed = (raw or "").strip()
+    grouped = _APP_PASSWORD.match(trimmed)
+    return "".join(grouped.groups()) if grouped else trimmed
 
 
 @dataclass(frozen=True, slots=True)
@@ -76,6 +91,9 @@ class MailboxConfig:
     host: str = ""
     port: int = 993
     username: str = ""
+    #: "ssl" for the usual port 993, "starttls" for port 143, or "none" for a
+    #: local bridge such as Proton Bridge that is already on the loopback.
+    security: str = "ssl"
     folder: str = "INBOX"
     #: IMAP search terms narrowing the folder to grocery mail. Anything the
     #: parser cannot read is skipped, so this only has to be roughly right.
@@ -89,7 +107,7 @@ class MailboxConfig:
 
     @property
     def password(self) -> str:
-        return os.environ.get("TROLLEY_IMAP_PASSWORD", "")
+        return clean_password(os.environ.get("TROLLEY_IMAP_PASSWORD", ""))
 
 
 @dataclass(frozen=True, slots=True)
@@ -154,6 +172,11 @@ def parse_config(data: dict[str, Any]) -> Config:
         raise ConfigError("notify.channel = 'ntfy' needs notify.ntfy_topic")
     if config.notify.enabled and config.notify.channel == "smtp" and not config.notify.smtp_to:
         raise ConfigError("notify.channel = 'smtp' needs notify.smtp_to")
+    if config.mailbox.security not in ("ssl", "starttls", "none"):
+        raise ConfigError(
+            f"mailbox.security must be 'ssl', 'starttls' or 'none', "
+            f"not {config.mailbox.security!r}"
+        )
     if config.mailbox.enabled:
         missing = [
             name

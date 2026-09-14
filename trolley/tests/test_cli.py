@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from trolley.cli import main
+from trolley.config import load_config
 from trolley.db import Database
 
 RECEIPT = """Tesco order confirmation
@@ -131,3 +132,84 @@ def test_mail_reports_a_connection_problem_without_a_traceback(tmp_path, capsys,
     )
     assert main(["--config", str(path), "mail", "--test"]) == 1
     assert "imap.invalid.test" in capsys.readouterr().err
+
+
+def test_setup_mail_goes_all_the_way_through_a_real_server(tmp_path, monkeypatch, capsys) -> None:
+    """The whole command, over a socket, as someone would actually run it."""
+    from datetime import date
+
+    from trolley.setup_mail import Prompt
+
+    from fake_imap import build_email, receipt_html
+    from imap_server import TinyIMAP
+
+    email = build_email(
+        "Your Tesco order confirmation",
+        receipt_html("A1", date(2026, 9, 1), [(1, "Tesco Toilet Tissue 9 Roll", "4.00")]),
+        date(2026, 9, 1),
+    )
+    config = tmp_path / "config.toml"
+    config.write_text(f'[server]\ndatabase = "{tmp_path / "trolley.db"}"\n')
+
+    typed = iter(["INBOX", 'FROM "tesco"'])
+    scripted = Prompt(
+        ask=lambda question, default="": next(typed, "") or default,
+        # Pasted the way Google displays it, spaces and all.
+        secret=lambda prompt="": "abcd efgh ijkl mnop",
+        confirm=lambda question, default=True: True,
+        say=print,
+    )
+    monkeypatch.setattr("trolley.setup_mail.terminal_prompt", lambda: scripted)
+
+    with TinyIMAP({1: email}) as server:
+        exit_code = main([
+            "--config", str(config), "setup-mail",
+            "--username", "columfoley@gmail.com",
+            "--host", "127.0.0.1", "--port", str(server.port), "--security", "none",
+        ])
+        assert exit_code == 0
+        # The spaces are stripped before the server ever sees the password.
+        assert all(
+            credentials == ("columfoley@gmail.com", "abcdefghijklmnop")
+            for credentials in server.logins
+        )
+
+    saved = load_config(config)
+    assert saved.mailbox.enabled and saved.mailbox.username == "columfoley@gmail.com"
+    assert saved.mailbox.security == "none"
+
+    out = capsys.readouterr().out
+    assert "Toilet roll" in out and "added [mailbox]" in out
+
+    # The password is written beside the config, never into it.
+    assert "abcdefghijklmnop" in (tmp_path / ".env").read_text()
+    assert "abcdefghijklmnop" not in config.read_text()
+
+
+def test_setup_mail_writes_nothing_when_the_server_refuses(tmp_path, monkeypatch, capsys) -> None:
+    from trolley.setup_mail import Prompt
+
+    from imap_server import TinyIMAP
+
+    config = tmp_path / "config.toml"
+    config.write_text(f'[server]\ndatabase = "{tmp_path / "trolley.db"}"\n')
+
+    scripted = Prompt(
+        ask=lambda question, default="": default,
+        secret=lambda prompt="": "wrong",
+        confirm=lambda question, default=True: True,
+        say=print,
+    )
+    monkeypatch.setattr("trolley.setup_mail.terminal_prompt", lambda: scripted)
+
+    with TinyIMAP({}) as server:
+        exit_code = main([
+            "--config", str(config), "setup-mail",
+            "--username", "columfoley@gmail.com",
+            "--host", "127.0.0.1", "--port", str(server.port), "--security", "none",
+        ])
+
+    assert exit_code == 1
+    assert "[mailbox]" not in config.read_text()
+    assert not (tmp_path / ".env").exists()
+    assert "rejected" in capsys.readouterr().out

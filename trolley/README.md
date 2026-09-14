@@ -73,45 +73,81 @@ trolley link "Oatly Oat Drink Whole 1L" milk
 
 ### The short version
 
-Point Trolley at the mailbox your Tesco confirmations land in and forget about
-it. Every fifteen minutes it reads anything new, and the order you placed this
-morning is in the history before the next list is built. Nothing to import,
-nothing to paste, nothing to remember.
-
-```toml
-[mailbox]
-enabled  = true
-host     = "imap.gmail.com"
-username = "you@gmail.com"
-folder   = "Tesco"
-search   = 'FROM "tesco"'
-```
+One command. It asks for the mailbox your order emails arrive in, tries it
+before writing anything down, and shows you the orders it found so you can see
+it reading your own shopping:
 
 ```bash
-export TROLLEY_IMAP_PASSWORD='your app password'
-trolley mail --test          # prove the settings work
-trolley mail --all           # read the back catalogue once
-trolley serve                # from here it keeps itself up to date
+trolley setup-mail
 ```
 
-For Gmail that password must be a 16-character **app password** from
-[myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords),
-not your normal one. If the password is rejected, `trolley mail --test` says so
-in those words rather than making you guess.
+```
+Your email address: you@gmail.com
+IMAP host [imap.gmail.com]:
+App password (not shown as you type):
+Folder [INBOX]:
+IMAP search for grocery mail [FROM "tesco"]:
 
-The connection is outbound only. Nothing has to be exposed to the internet, no
-port forwarding, no webhook, no third-party service holding your mail.
+Trying it...
+  connected to imap.gmail.com as you@gmail.com; folder 'INBOX' has 96 message(s)
+  matching 'FROM "tesco"' in the last 730 days
 
-**If you would rather not hand over your main mailbox**, this is where
-forwarding earns its keep: make a filter that auto-forwards Tesco mail to a
-separate free mail account, and point Trolley at that instead. It then only
-ever sees grocery email. The `folder` setting does a weaker version of the same
-thing — filter Tesco mail into a label and Trolley reads only that label.
+Reading a sample: 20 messages checked, 20 orders, 74 lines would be recorded
+    Tesco British Semi Skimmed Milk 2.272L/4 Pints   -> Milk
+    Tesco Toilet Tissue 9 Roll                       -> Toilet roll
+    Andrex Classic Clean Toilet Tissue 12 Rolls      -> Toilet roll
+    ...
 
-Progress is tracked by message UID, not by read/unread, so Trolley never
-touches your inbox to keep its place and reading mail on your phone does not
-hide it from the importer. `mark_seen = true` if you would rather it did mark
-them.
+Save this to the config? [Y/n]:
+```
+
+Then read the back catalogue once and start the server:
+
+```bash
+trolley mail --all     # everything already in the mailbox
+trolley serve          # from here it keeps itself up to date
+```
+
+From that point there is nothing to do. An order is placed, the email arrives,
+the next check folds it into the history, and the list for the following
+delivery already knows about it.
+
+### Gmail, specifically
+
+The host is `imap.gmail.com` and the setup command fills that in from your
+address. Two things trip people up, and both are handled:
+
+- **The password must be an app password**, not your Google password. Turn on
+  2-Step Verification, then make one at
+  [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords).
+  Google shows it as four groups of four; paste it exactly as shown, spaces and
+  all, because the spaces are presentation only and get stripped for you.
+  If Google refuses it, the error says which of these to check rather than just
+  "invalid credentials".
+- **A Gmail folder is a label.** `INBOX` reads everything. If you filter Tesco
+  mail into a label, name that label instead and Trolley never sees anything
+  else. Nested labels use a slash, and a label with a space in it is fine.
+
+IMAP also has to be on: Gmail, Settings, See all settings, Forwarding and
+POP/IMAP.
+
+The password is written to a `.env` file beside the config, readable only by
+you, and never into the config file itself.
+
+### If you would rather not hand over your main mailbox
+
+This is where forwarding earns its keep. Make a Gmail filter that auto-forwards
+Tesco mail to a separate free mail account, and point Trolley at that instead.
+It then only ever sees grocery email. The label approach above is a lighter
+version of the same idea.
+
+Either way the connection is outbound only: nothing has to be exposed to the
+internet, no port forwarding, no webhook, no third party holding your mail.
+
+Progress is tracked by message ID rather than read/unread, so Trolley never
+touches your inbox to keep its place, and reading mail on your phone does not
+hide it from the importer. Set `mark_seen = true` if you would rather it did
+mark them read.
 
 ### Which email it believes
 
